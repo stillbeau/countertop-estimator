@@ -6,6 +6,27 @@ from io import BytesIO
 # ✅ Correct GitHub RAW File URL for Excel file
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/Dead%20Stock%20Jan%209%202025%20revised.xlsx"
 
+st.write("📢 Attempting to load data...")
+
+# Test if the file URL is accessible
+response = requests.get(file_url)
+
+if response.status_code == 200:
+    st.write("✅ File URL is accessible!")
+else:
+    st.error(f"❌ Failed to fetch the file. HTTP Status Code: {response.status_code}")
+    st.stop()
+
+# Load the Excel file
+df_inventory = load_data()
+
+if df_inventory is None:
+    st.error("❌ Data loading failed. Check the file format and URL.")
+    st.stop()
+else:
+    st.write("✅ Data loaded successfully!")
+
+
 @st.cache_data
 def load_data():
     """Load and clean the Excel file from GitHub."""

@@ -37,7 +37,7 @@ def load_data():
         st.error(f"❌ An error occurred while loading the file: {e}")
         return None
 
-# ✅ The function is now defined BEFORE calling it
+# ✅ Call the function AFTER it's defined
 df_inventory = load_data()
 
 if df_inventory is None:

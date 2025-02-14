@@ -31,6 +31,10 @@ def load_data():
         df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
         df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
 
+        # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
+        valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
+        df = df[df['Thickness'].isin(valid_thicknesses)]
+
         # ✅ Convert numeric columns
         numeric_cols = ['Available Qty', 'SQ FT PRICE', 'FAB', 'TEMP/Install', 'IB SQ FT Price', 'Sale price']
         for col in numeric_cols:
@@ -54,8 +58,8 @@ st.markdown("### Select your requirements and get a cost estimate!")
 # 📏 **Square Feet Input**
 square_feet = st.number_input("📐 Enter Square Feet Needed:", min_value=1, step=1)
 
-# 🔲 **Thickness Dropdown**
-thickness_options = sorted(df_inventory['Thickness'].dropna().unique())
+# 🔲 **Thickness Dropdown** (Only 1.2 cm, 2 cm, 3 cm)
+thickness_options = ["1.2 cm", "2 cm", "3 cm"]
 selected_thickness = st.selectbox("🔲 Select Thickness:", thickness_options)
 
 # 🎨 **Color Dropdown (Auto-Filters by Thickness)**

@@ -6,53 +6,102 @@ from io import BytesIO
 # ✅ Correct GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# ✅ Define `load_data()` BEFORE calling it
+# ✅ Load and clean the Excel file
 @st.cache_data
 def load_data():
     """Load and clean the Excel file from GitHub."""
     try:
-        st.write("📢 Attempting to fetch file...")
         response = requests.get(file_url, timeout=10)
-
         if response.status_code != 200:
             st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
             return None
 
-        st.write("✅ File downloaded successfully!")
-
-        # ✅ Load the Excel file
         xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
-
-        # ✅ Debugging Step - Check available sheets
-        sheet_names = xls.sheet_names
-        st.write(f"🔍 Available Sheets: {sheet_names}")
-
-        # ✅ Load the first sheet
-        df = pd.read_excel(xls, sheet_name=sheet_names[0])
+        df = pd.read_excel(xls, sheet_name='Sheet1')
 
         # ✅ Clean column names (remove hidden spaces)
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
-        # ✅ Force "Serial Number" column to be text
+        # ✅ Ensure "Serial Number" is a string
         for col in df.columns:
-            if "serial" in col.lower():  # Handle variations like "Serial Number"
+            if "serial" in col.lower():
                 df[col] = df[col].astype(str)
-                st.write(f"🔧 Converted column '{col}' to string.")
 
-        # ✅ Show first few rows for debugging
-        st.write("📊 First 5 rows of cleaned data:", df.head())
+        # ✅ Extract Material, Color, and Thickness from "Product Variant"
+        df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
+        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
 
-        return df
+        # ✅ Convert numeric columns
+        numeric_cols = ['Available Qty', 'SQ FT PRICE', 'FAB', 'TEMP/Install', 'IB SQ FT Price', 'Sale price']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        return df[['Material', 'Color', 'Thickness', 'Available Qty', 'SQ FT PRICE', 'FAB', 'TEMP/Install', 'IB SQ FT Price', 'Sale price']]
     
     except Exception as e:
         st.error(f"❌ Error while loading the file: {e}")
         return None
 
-# ✅ Call `load_data()` AFTER it is defined
 df_inventory = load_data()
 
 if df_inventory is None:
-    st.warning("⚠️ Data failed to load. Please check your file structure.")
     st.stop()
 
-st.write("✅ Data loaded successfully!")
+# 🎨 **UI Setup**
+st.title("🛠 Countertop Cost Estimator")
+st.markdown("### Select your requirements and get a cost estimate!")
+
+# 📏 **Square Feet Input**
+square_feet = st.number_input("📐 Enter Square Feet Needed:", min_value=1, step=1)
+
+# 🔲 **Thickness Dropdown**
+thickness_options = sorted(df_inventory['Thickness'].dropna().unique())
+selected_thickness = st.selectbox("🔲 Select Thickness:", thickness_options)
+
+# 🎨 **Color Dropdown (Auto-Filters by Thickness)**
+filtered_colors = df_inventory[df_inventory['Thickness'] == selected_thickness]['Color'].dropna().unique()
+selected_color = st.selectbox("🎨 Select Color:", sorted(filtered_colors) if len(filtered_colors) > 0 else [])
+
+# 📊 **Estimate Cost Button**
+if st.button("📊 Estimate Cost"):
+    if not selected_color:
+        st.error("⚠️ Please select a color.")
+    else:
+        # 📌 Filter for selected material
+        filtered_df = df_inventory[
+            (df_inventory['Color'] == selected_color) & (df_inventory['Thickness'] == selected_thickness)
+        ]
+        
+        if filtered_df.empty:
+            st.error("❌ No matching slabs found.")
+        else:
+            selected_slab = filtered_df.iloc[0]
+            available_sqft = selected_slab['Available Qty']
+            
+            required_sqft = square_feet * 1.2  # **20% Waste Factor**
+            
+            if required_sqft > available_sqft:
+                st.error("❌ Not enough material available for this selection (including 20% waste).")
+            else:
+                # **Cost Calculations**
+                material_cost = required_sqft * selected_slab['SQ FT PRICE']
+                fab_cost = required_sqft * selected_slab['FAB']
+                install_cost = required_sqft * selected_slab['TEMP/Install']
+                ib_cost = material_cost + fab_cost  # **IB Cost: Material + Fabrication**
+                sale_price = required_sqft * selected_slab['Sale price']
+
+                # ✅ **Display Cost Breakdown**
+                st.success("✅ Estimate Complete!")
+                st.write(f"📌 **Material**: {selected_slab['Material']} {selected_slab['Color']} {selected_slab['Thickness']}")
+                st.write(f"📦 **Available Slab Quantity**: {available_sqft:.2f} sq ft")
+                st.write(f"🔲 **Required Sq Ft (20% waste included)**: {required_sqft:.2f} sq ft")
+                
+                st.markdown(f"""
+                **💰 Cost Breakdown**  
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fab_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Sale Price:** ${sale_price:.2f}  
+                """)
+

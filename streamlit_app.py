@@ -3,15 +3,15 @@ import streamlit as st
 import requests
 from io import BytesIO
 
-# Use the RAW file link from your GitHub repository
-file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/refs/heads/main/streamlit_app.py"
+# ✅ Correct RAW file link for the Excel file
+file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/Dead%20Stock%20Jan%209%202025%20revised.xlsx"
 
 @st.cache_data
 def load_data():
     """Load and clean the Excel file from GitHub."""
     response = requests.get(file_url)
     if response.status_code != 200:
-        st.error("Error loading the file. Check the GitHub URL.")
+        st.error(f"Error loading the file. HTTP Status: {response.status_code}")
         return None
 
     xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")

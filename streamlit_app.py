@@ -4,7 +4,7 @@ import requests
 from io import BytesIO
 
 # Use the RAW file link from your GitHub repository
-file_url = "https://github.com/stillbeau/countertop-estimator/blob/main/Dead%20Stock%20Jan%209%202025%20revised.xlsx"
+file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/refs/heads/main/streamlit_app.py"
 
 @st.cache_data
 def load_data():

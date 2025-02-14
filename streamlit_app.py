@@ -70,10 +70,6 @@ selected_thickness = st.selectbox("🔲 Select Thickness:", thickness_options)
 filtered_colors = df_inventory[df_inventory['Thickness'] == selected_thickness]['Color'].dropna().unique()
 selected_color = st.selectbox("🎨 Select Color:", sorted(filtered_colors) if len(filtered_colors) > 0 else [])
 
-# ✅ Initialize session state for showing details
-if "show_details" not in st.session_state:
-    st.session_state.show_details = False
-
 # 📊 **Estimate Cost Button**
 if st.button("📊 Estimate Cost"):
     if not selected_color:
@@ -105,11 +101,8 @@ if st.button("📊 Estimate Cost"):
                 # ✅ **Display Final Price**
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-                # 🧐 **Checkbox for Details Toggle**
-                st.session_state.show_details = st.checkbox("🧐 Show Full Cost Breakdown", value=st.session_state.show_details)
-
-                # ✅ **Only show breakdown if checkbox is checked**
-                if st.session_state.show_details:
+                # 🧐 **Expander for Cost Breakdown (Dropdown-like)**
+                with st.expander("🧐 Show Full Cost Breakdown"):
                     st.write(f"📌 **Material**: {selected_slab['Material']} {selected_slab['Color']} {selected_slab['Thickness']}")
                     st.write(f"📦 **Available Slab Quantity**: {available_sqft:.2f} sq ft")
                     st.write(f"🔲 **Required Sq Ft (20% waste included)**: {required_sqft:.2f} sq ft")

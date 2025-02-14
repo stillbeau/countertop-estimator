@@ -3,7 +3,7 @@ import streamlit as st
 import openpyxl
 
 # Load dataset
-file_path = "Dead Stock Jan 9 2025 revised.xlsx"
+file_path = Dead Stock Jan 9 2025 revised.xlsx"
 
 @st.cache_data
 def load_data():

@@ -3,9 +3,10 @@ import streamlit as st
 import requests
 from io import BytesIO
 
-# ✅ Correct GitHub RAW File URL
+# ✅ Step 1: Define the correct GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/Dead%20Stock%20Jan%209%202025%20revised.xlsx"
 
+# ✅ Step 2: Define the load_data() function BEFORE calling it
 @st.cache_data
 def load_data():
     """Load and clean the Excel file from GitHub."""
@@ -15,7 +16,6 @@ def load_data():
             st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
             return None
 
-        # ✅ Ensure this function exists before being called
         xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
         df = pd.read_excel(xls, sheet_name='Sheet1')
 
@@ -37,7 +37,7 @@ def load_data():
         st.error(f"❌ An error occurred while loading the file: {e}")
         return None
 
-# ✅ Call the function AFTER it's defined
+# ✅ Step 3: Now Call `load_data()` AFTER It Is Defined
 df_inventory = load_data()
 
 if df_inventory is None:

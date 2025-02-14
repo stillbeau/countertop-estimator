@@ -3,7 +3,7 @@ import streamlit as st
 import openpyxl
 
 # Load dataset
-file_path = Dead Stock Jan 9 2025 revised.xlsx"
+file_path = https://github.com/stillbeau/countertop-estimator/blob/main/Dead%20Stock%20Jan%209%202025%20revised.xlsx
 
 @st.cache_data
 def load_data():

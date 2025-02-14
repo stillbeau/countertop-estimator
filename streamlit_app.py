@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+import openpyxl
 
 # Load dataset
 file_path = "Dead Stock Jan 9 2025 revised.xlsx"

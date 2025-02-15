@@ -47,10 +47,6 @@ if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
-if "show_google_search" not in st.session_state:
-    st.session_state.show_google_search = False  
-if "google_search_url" not in st.session_state:
-    st.session_state.google_search_url = ""  
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -162,30 +158,23 @@ if st.button("📊 Estimate Cost"):
         else:
             selected_slab = selected_slab.iloc[0]
             available_sqft = selected_slab["Available Qty"]
-            sq_ft_price = float(selected_slab["SQ FT PRICE"])  
             required_sqft = square_feet * 1.2  
 
-            material_cost = sq_ft_price * required_sqft
-            fabrication_cost = st.session_state.fab_cost * required_sqft
-            install_cost = st.session_state.install_cost * required_sqft
-            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
-
             if required_sqft > available_sqft:
-                st.error("🚨 Not enough material available for this estimate!")
+                st.error(f"🚨 Not enough material available! ({available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+                # ✅ Suggest **Alternative Slabs** with enough quantity
+                alternatives = df_inventory[
+                    (df_inventory["Thickness"] == selected_thickness) &
+                    (df_inventory["Available Qty"] >= required_sqft)
+                ].sort_values(by="SQ FT PRICE").head(3)
 
-            # ✅ Generate Google Search URL
-            query = f"{selected_color} {selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+                if not alternatives.empty:
+                    st.warning("🔄 **Suggested Alternatives:**")
+                    for _, row in alternatives.iterrows():
+                        st.markdown(f"✅ **{row['Color']}** - {row['Available Qty']} sq ft available, ${row['SQ FT PRICE']}/sq ft")
+                else:
+                    st.warning("⚠️ No suitable alternatives found.")
 
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                """)
+            else:
+                st.success(f"💰 **Estimated Sale Price: ${required_sqft * selected_slab['SQ FT PRICE']:.2f}**")

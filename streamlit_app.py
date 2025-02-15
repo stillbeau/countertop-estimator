@@ -34,7 +34,7 @@ def save_settings():
 # ✅ Load saved settings if they exist
 saved_settings = load_settings()
 
-# ✅ Initialize session state with **persistent settings**
+# ✅ **Ensure Session State Variables Exist**
 if "fab_cost" not in st.session_state:
     st.session_state.fab_cost = float(saved_settings["fab_cost"])  
 if "install_cost" not in st.session_state:
@@ -47,6 +47,10 @@ if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
+if "show_google_search" not in st.session_state:
+    st.session_state.show_google_search = False  
+if "google_search_url" not in st.session_state:
+    st.session_state.google_search_url = ""  
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -95,19 +99,16 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# ✅ Admin Login Function (Fixes Double Click Issue)
-def admin_login():
-    if st.session_state.admin_password == ADMIN_PASSWORD:
-        st.session_state.admin_access = True
-
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
     st.header("🔑 Admin Panel")
 
     if not st.session_state.admin_access:
-        st.text_input("Enter Admin Password:", type="password", key="admin_password", on_change=admin_login)
-        if st.session_state.admin_access:
-            st.success("✅ Admin Access Granted!")
+        password_input = st.text_input("Enter Admin Password:", type="password")
+        if st.button("🔓 Login"):
+            if password_input == ADMIN_PASSWORD:
+                st.session_state.admin_access = True
+                st.experimental_rerun()  # ✅ UI Refresh AFTER session update
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
@@ -127,10 +128,10 @@ with st.sidebar:
         # ✅ Save settings when any value is changed
         save_settings()
 
-        # 🔓 **Logout Button** (No More Crash)
+        # 🔓 **Logout Button**
         if st.button("🔒 Logout"):
             st.session_state.admin_access = False
-            st.rerun()  # ✅ No crash, properly refreshes UI
+            st.experimental_rerun()  # ✅ Properly refreshes UI
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
@@ -171,6 +172,11 @@ if st.button("📊 Estimate Cost"):
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+            # ✅ Generate Google Search URL
+            query = f"{selected_color} {selected_thickness} countertop"
+            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
 
             with st.expander("🧐 Show Full Cost Breakdown"):
                 st.markdown(f"""

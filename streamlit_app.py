@@ -10,10 +10,8 @@ file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/mai
 ADMIN_PASSWORD = "floform2024"
 
 # ✅ Initialize session state for settings
-if "material_cost" not in st.session_state:
-    st.session_state.material_cost = 0  # Default material cost per sq ft
 if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = 0  # Default fabrication cost per sq ft
+    st.session_state.fab_cost = 23  # Default fabrication cost per sq ft
 if "install_cost" not in st.session_state:
     st.session_state.install_cost = 23  # Default install cost per sq ft
 if "ib_margin" not in st.session_state:
@@ -88,10 +86,6 @@ with st.sidebar:
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
         
-        # Editable material cost
-        st.session_state.material_cost = st.number_input("🛢 Material Cost per sq ft:", 
-                                                         value=st.session_state.material_cost, step=1.0)
-
         # Editable fabrication cost
         st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
                                                     value=st.session_state.fab_cost, step=1.0)
@@ -141,13 +135,14 @@ if st.button("📊 Estimate Cost"):
         else:
             selected_slab = selected_slab.iloc[0]
             available_sqft = selected_slab["Available Qty"]
+            sq_ft_price = selected_slab["SQ FT PRICE"]  # ✅ Pull material cost from Excel
             required_sqft = square_feet * 1.2  # **20% Waste Factor**
 
             if required_sqft > available_sqft:
                 st.error("❌ Not enough material available.")
             else:
                 # **Cost Calculations**
-                material_cost = st.session_state.material_cost * required_sqft
+                material_cost = sq_ft_price * required_sqft
                 fabrication_cost = st.session_state.fab_cost * required_sqft
                 install_cost = st.session_state.install_cost * required_sqft
 
@@ -161,7 +156,7 @@ if st.button("📊 Estimate Cost"):
                 with st.expander("🧐 Show Full Cost Breakdown"):
                     st.markdown(f"""
                     **💰 Cost Breakdown**  
-                    - **Material Cost:** ${material_cost:.2f}  
+                    - **Material Cost (from Excel):** ${material_cost:.2f}  
                     - **Fabrication Cost:** ${fabrication_cost:.2f}  
                     - **IB Cost (Material + Fab + IB Margin):** ${ib_cost:.2f}  
                     - **Installation Cost:** ${install_cost:.2f}  

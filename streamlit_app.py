@@ -134,7 +134,8 @@ if st.button("📊 Estimate Cost"):
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
-        material_cost = total_available_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
+        # ✅ **FIX: Calculate Material Cost Based on Square Foot Price**
+        material_cost = required_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
         fabrication_cost = st.session_state.fab_cost * required_sqft
         install_cost = st.session_state.install_cost * required_sqft
         ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)

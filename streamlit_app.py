@@ -1,7 +1,9 @@
-import streamlit as st
 import pandas as pd
+import streamlit as st
 import requests
 from io import BytesIO
+import json
+import os
 
 # ✅ GitHub RAW File URL (Your Excel Data)
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
@@ -9,66 +11,93 @@ file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/mai
 # 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
 
+# 🔄 **Settings File to Persist Admin Rates**
+SETTINGS_FILE = "settings.json"
+
+# ✅ **Function to Load Saved Settings**
+def load_settings():
+    if os.path.exists(SETTINGS_FILE):
+        with open(SETTINGS_FILE, "r") as f:
+            return json.load(f)
+    return {"fab_cost": 23, "install_cost": 23, "ib_margin": 0.15, "sale_margin": 0.15}
+
+# ✅ **Function to Save Settings**
+def save_settings():
+    with open(SETTINGS_FILE, "w") as f:
+        json.dump({
+            "fab_cost": st.session_state.fab_cost,
+            "install_cost": st.session_state.install_cost,
+            "ib_margin": st.session_state.ib_margin,
+            "sale_margin": st.session_state.sale_margin
+        }, f)
+
+# ✅ Load saved settings if they exist
+saved_settings = load_settings()
+
+# ✅ **Ensure Session State Variables Exist**
+if "fab_cost" not in st.session_state:
+    st.session_state.fab_cost = float(saved_settings["fab_cost"])  
+if "install_cost" not in st.session_state:
+    st.session_state.install_cost = float(saved_settings["install_cost"])  
+if "ib_margin" not in st.session_state:
+    st.session_state.ib_margin = float(saved_settings["ib_margin"])  
+if "sale_margin" not in st.session_state:
+    st.session_state.sale_margin = float(saved_settings["sale_margin"])  
+if "admin_access" not in st.session_state:
+    st.session_state.admin_access = False  
+if "df_inventory" not in st.session_state:
+    st.session_state.df_inventory = pd.DataFrame()  
+if "google_search_url" not in st.session_state:
+    st.session_state.google_search_url = ""  
+if "show_google_button" not in st.session_state:
+    st.session_state.show_google_button = False  
+
 # ✅ Load and clean the Excel file
 @st.cache_data
 def load_data():
-    """Load slab data from the Excel sheet with error handling."""
-    response = requests.get(file_url, timeout=10)
-    
-    if response.status_code != 200:
-        st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
+    """Load slab data from the Excel sheet."""
+    try:
+        response = requests.get(file_url, timeout=10)
+        if response.status_code != 200:
+            st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
+            return None
+
+        xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
+        df = pd.read_excel(xls, sheet_name='Sheet1')
+
+        # ✅ Clean column names (remove hidden spaces)
+        df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
+
+        # ✅ Extract Material, Color, and Thickness from "Product Variant"
+        df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
+        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
+
+        # ✅ Normalize Thickness Formatting
+        df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
+
+        # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
+        valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
+        df = df[df['Thickness'].isin(valid_thicknesses)]
+
+        # ✅ Convert numeric columns
+        numeric_cols = ['Available Qty', 'SQ FT PRICE', 'Serial Number']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
+
+        # ✅ Store DataFrame in session state
+        st.session_state.df_inventory = df
+
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Error loading the file: {e}")
         return None
-    
-    xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
-    df = pd.read_excel(xls, sheet_name='Sheet1')
 
-    # ✅ Clean column names (remove hidden spaces & non-printable characters)
-    df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
-
-    # ✅ Debug: Print available columns if key error occurs
-    if "Product Variant" not in df.columns:
-        st.error("❌ 'Product Variant' column is missing. Available columns:")
-        st.write(df.columns)
-        return None
-
-    # ✅ Extract Material, Color, and Thickness from "Product Variant"
-    df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
-    df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
-
-    # ✅ Normalize Thickness Formatting
-    df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
-
-    # ✅ Filter valid thicknesses
-    valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
-    df = df[df['Thickness'].isin(valid_thicknesses)]
-
-    # ✅ Convert numeric columns safely
-    numeric_cols = ['Available Qty', 'SQ FT PRICE']
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        else:
-            st.warning(f"⚠️ Column '{col}' not found in the Excel file.")
-
-    return df
-
-df_inventory = load_data()
-
-# ✅ If the data failed to load, stop execution
-if df_inventory is None:
-    st.stop()
-
-# ✅ Initialize Admin Rates
-if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = 23  
-if "install_cost" not in st.session_state:
-    st.session_state.install_cost = 23  
-if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = 0.15  
-if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = 0.15  
-if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  
+# Load the data if not already loaded
+if st.session_state.df_inventory.empty:
+    df_inventory = load_data()
+else:
+    df_inventory = st.session_state.df_inventory
 
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
@@ -79,7 +108,7 @@ with st.sidebar:
         if st.button("🔓 Login"):
             if password_input == ADMIN_PASSWORD:
                 st.session_state.admin_access = True
-                st.experimental_rerun()
+                st.experimental_rerun()  # ✅ UI Refresh AFTER session update
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
@@ -96,69 +125,60 @@ with st.sidebar:
         st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
                                                        value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
+        # ✅ Save settings when any value is changed
+        save_settings()
+
+        # 🔓 **Logout Button**
         if st.button("🔒 Logout"):
             st.session_state.admin_access = False
-            st.experimental_rerun()
+            st.experimental_rerun()  # ✅ Properly refreshes UI
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
+st.markdown("### Select your slab and get an estimate!")
 
-square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
-thickness_options = ["1.2 cm", "2 cm", "3 cm"]
-selected_thickness = st.selectbox("🔲 Thickness:", thickness_options, index=2)
+col1, col2 = st.columns(2)
+with col1:
+    square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
+
+with col2:
+    thickness_options = ["1.2 cm", "2 cm", "3 cm"]
+    selected_thickness = st.selectbox("🔲 Thickness:", thickness_options, index=2)  # Default to 3 cm
 
 available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
-selected_color = st.selectbox("🎨 Color:", sorted(available_colors)) if len(available_colors) > 0 else None
+if len(available_colors) > 0:
+    selected_color = st.selectbox("🎨 Color:", sorted(available_colors))
+else:
+    st.warning("⚠️ No colors available for this thickness.")
+    selected_color = None
 
 if st.button("📊 Estimate Cost"):
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
-        selected_slabs = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        
-        total_available_sqft = selected_slabs["Available Qty"].sum()
-        required_sqft = square_feet * 1.2  # **20% Waste Factor**
-
-        if required_sqft > total_available_sqft:
-            st.error("❌ Not enough material available!")
+        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
+        if selected_slab.empty:
+            st.error("❌ No slab found for the selected color and thickness.")
         else:
-            # ✅ Cost Calculations
-            sq_ft_price = selected_slabs.iloc[0]["SQ FT PRICE"]
+            selected_slab = selected_slab.iloc[0]
+            available_sqft = selected_slab["Available Qty"]
+            sq_ft_price = float(selected_slab["SQ FT PRICE"])  
+            required_sqft = square_feet * 1.2  
+
             material_cost = sq_ft_price * required_sqft
             fabrication_cost = st.session_state.fab_cost * required_sqft
             install_cost = st.session_state.install_cost * required_sqft
             ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
-            # ✅ Google Search URL
-            google_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+countertop"
-
-            # ✅ Display Estimate
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-            # ✅ View Images Button
-            st.markdown(f"""
-            <div style="text-align: center;">
-                <a href="{google_url}" target="_blank" style="
-                    display: inline-block;
-                    background-color: #007AFF;
-                    color: white;
-                    font-size: 18px;
-                    font-weight: 500;
-                    padding: 10px 20px;
-                    border-radius: 8px;
-                    text-decoration: none;
-                    margin-top: 10px;">
-                    🔍 View Images
-                </a>
-            </div>
-            """, unsafe_allow_html=True)
+            # ✅ Show "View Images" Button Below Estimate Price
+            google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{selected_thickness}+countertop"
+            st.markdown(f'[🔍 **View Images**]({google_search_url})', unsafe_allow_html=True)
 
-            # ✅ Full Cost Breakdown
-            serial_numbers = ", ".join(selected_slabs["Serial Number"].astype(str).unique())
             with st.expander("🧐 Show Full Cost Breakdown"):
                 st.markdown(f"""
-                - **Serial Numbers Used:** {serial_numbers}  
                 - **Material Cost:** ${material_cost:.2f}  
                 - **Fabrication Cost:** ${fabrication_cost:.2f}  
                 - **IB Cost:** ${ib_cost:.2f}  

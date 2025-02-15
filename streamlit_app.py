@@ -104,13 +104,12 @@ with st.sidebar:
     st.header("🔑 Admin Panel")
 
     if not st.session_state.admin_access:
-        password_input = st.text_input("Enter Admin Password:", type="password")
+        password_input = st.text_input("Enter Admin Password:", type="password", key="admin_password_input")
         if st.button("🔓 Login"):
             if password_input == ADMIN_PASSWORD:
                 st.session_state.admin_access = True
                 st.experimental_rerun()  # ✅ UI Refresh AFTER session update
-
-    if st.session_state.admin_access:
+    else:
         st.subheader("⚙️ Adjustable Rates")
 
         st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 

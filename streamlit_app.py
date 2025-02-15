@@ -109,17 +109,10 @@ with st.sidebar:
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
 
-        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
-                                                    value=float(st.session_state.fab_cost), step=1.0)
-
-        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", 
-                                                     value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
-
-        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
-                                                        value=float(st.session_state.install_cost), step=1.0)
-
-        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
-                                                       value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
         # ✅ Save settings when any value is changed
         save_settings()
@@ -160,10 +153,7 @@ if st.button("📊 Estimate Cost"):
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
             # ✅ Suggest **Alternative Slabs** with enough quantity
-            alternatives = df_inventory[
-                (df_inventory["Thickness"] == selected_thickness) &
-                (df_inventory["Available Qty"] >= required_sqft)
-            ].sort_values(by="SQ FT PRICE").head(3)
+            alternatives = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Available Qty"].sum() >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
 
             if not alternatives.empty:
                 st.warning("🔄 **Suggested Alternatives:**")
@@ -172,8 +162,9 @@ if st.button("📊 Estimate Cost"):
             else:
                 st.warning("⚠️ No suitable alternatives found.")
         else:
-            num_slabs_used = matching_slabs.shape[0]
-            if num_slabs_used > 1:
-                st.warning(f"⚠️ **This job will require {num_slabs_used} slabs to fabricate.**")
-
             st.success(f"💰 **Estimated Sale Price: ${required_sqft * matching_slabs.iloc[0]['SQ FT PRICE']:.2f}**")
+
+        # ✅ Restore Google Search functionality
+        query = f"{selected_color} {selected_thickness} countertop"
+        google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+        st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)

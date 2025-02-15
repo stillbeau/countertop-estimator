@@ -11,7 +11,7 @@ ADMIN_PASSWORD = "floform2024"
 
 # ✅ Initialize session state for settings
 if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = 23  # Default fabrication cost per sq ft
+    st.session_state.fab_cost = 23  # ✅ Default fabrication cost per sq ft
 if "install_cost" not in st.session_state:
     st.session_state.install_cost = 23  # Default install cost per sq ft
 if "ib_margin" not in st.session_state:
@@ -86,7 +86,7 @@ with st.sidebar:
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
         
-        # Editable fabrication cost
+        # Editable fabrication cost (default at $23)
         st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
                                                     value=st.session_state.fab_cost, step=1.0)
 

@@ -123,14 +123,17 @@ if st.button("📊 Estimate Cost"):
                 if not st.session_state.breakdown_access:
                     with st.expander("🔒 Unlock Cost Breakdown"):
                         breakdown_password = st.text_input("🔑 Enter password:", type="password", key="breakdown_pass")
-                        if st.button("🔓 Unlock Breakdown", key="unlock_button"):
-                            if breakdown_password == BREAKDOWN_PASSWORD:
-                                st.session_state.breakdown_access = True
-                                st.experimental_rerun()  # ✅ Refresh UI to show breakdown
-                            else:
-                                st.error("❌ Incorrect password!")
 
-                # ✅ Only show if unlocked
+                        # ✅ Unlock without UI refresh
+                        if "password_entered" not in st.session_state:
+                            st.session_state.password_entered = False
+
+                        if breakdown_password == BREAKDOWN_PASSWORD and not st.session_state.password_entered:
+                            st.session_state.breakdown_access = True
+                            st.session_state.password_entered = True
+                            st.experimental_rerun()  # ✅ Force UI to refresh
+
+                # ✅ Show only if unlocked
                 if st.session_state.breakdown_access:
                     with st.expander("💰 Full Cost Breakdown"):
                         st.markdown(f"""

@@ -104,6 +104,22 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
+# 🎨 **Admin Panel**
+with st.sidebar:
+    st.header("🔑 Admin Panel")
+    password_input = st.text_input("Enter Admin Password:", type="password")
+    if st.button("🔓 Login"):
+        if password_input == ADMIN_PASSWORD:
+            st.session_state.admin_access = True
+            st.experimental_rerun()
+
+    if st.session_state.admin_access:
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=st.session_state.fab_cost)
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=st.session_state.ib_margin)
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=st.session_state.install_cost)
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=st.session_state.sale_margin)
+        save_settings()
+
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 
@@ -114,41 +130,7 @@ selected_thickness = st.selectbox("🔲 Thickness:", ["1.2 cm", "2 cm", "3 cm"],
 available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
 selected_color = st.selectbox("🎨 Color:", sorted(available_colors) if len(available_colors) > 0 else [])
 
-if st.button("📊 Estimate Cost"):
-    if not selected_color:
-        st.error("❌ Please select a valid color.")
-    else:
-        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        total_available_sqft = selected_slab["Available Qty"].sum()
-        required_sqft = square_feet * 1.2  # Including waste factor
+# ✅ Debugging Check
+st.write("✅ Debug - Available Colors:", available_colors)
 
-        if required_sqft > total_available_sqft:
-            st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
-        else:
-            # ✅ Calculate Costs Based on Square Footage
-            sq_ft_price = selected_slab.iloc[0]["SQ FT PRICE"]
-            material_cost = required_sqft * sq_ft_price
-            fabrication_cost = st.session_state.fab_cost * required_sqft
-            install_cost = st.session_state.install_cost * required_sqft
-            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
-
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
-
-            # ✅ Restore Google Search functionality
-            query = f"{selected_color} {selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
-
-            # ✅ Display **Serial Numbers** in Breakdown
-            serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
-
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                - **Slab Serial Number(s):** {serial_numbers}  
-                """)
+# ✅ Test and let me know if you still see errors!

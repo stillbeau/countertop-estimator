@@ -4,7 +4,6 @@ import requests
 from io import BytesIO
 import json
 import os
-import webbrowser
 
 # ✅ GitHub RAW File URL (Your Excel Data)
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
@@ -153,11 +152,7 @@ else:
     st.warning("⚠️ No colors available for this thickness.")
     selected_color = None
 
-col3, col4 = st.columns([1, 1])
-with col3:
-    estimate_clicked = st.button("📊 Estimate Cost")
-
-if estimate_clicked:
+if st.button("📊 Estimate Cost"):
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
@@ -176,10 +171,11 @@ if estimate_clicked:
             ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
-            st.session_state.google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{selected_thickness}+countertop"
-            st.session_state.show_google_button = True
-
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+            # ✅ Show "View Images" Button Below Estimate Price
+            google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{selected_thickness}+countertop"
+            st.markdown(f'[🔍 **View Images**]({google_search_url})', unsafe_allow_html=True)
 
             with st.expander("🧐 Show Full Cost Breakdown"):
                 st.markdown(f"""
@@ -189,7 +185,3 @@ if estimate_clicked:
                 - **Installation Cost:** ${install_cost:.2f}  
                 - **Total Sale Price:** ${sale_price:.2f}  
                 """)
-
-with col4:
-    if st.session_state.show_google_button:
-        st.markdown(f'[🔍 **View Images**]({st.session_state.google_search_url})', unsafe_allow_html=True)

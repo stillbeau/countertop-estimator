@@ -4,6 +4,7 @@ import requests
 from io import BytesIO
 import json
 import os
+import webbrowser
 
 # ✅ GitHub RAW File URL (Your Excel Data)
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
@@ -191,4 +192,4 @@ if estimate_clicked:
 
 with col4:
     if st.session_state.show_google_button:
-        st.button("🔍 View Images", help="Opens a Google image search", on_click=lambda: st.markdown(f'<a href="{st.session_state.google_search_url}" target="_blank">Click here</a>', unsafe_allow_html=True))
+        st.markdown(f'[🔍 **View Images**]({st.session_state.google_search_url})', unsafe_allow_html=True)

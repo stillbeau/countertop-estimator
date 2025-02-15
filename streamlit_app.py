@@ -129,21 +129,37 @@ if st.button("📊 Estimate Cost"):
 
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
-            st.warning(f"⚠️ Multiple slabs needed: {round(required_sqft / total_available_sqft, 2)} slabs required")
 
             # ✅ Suggest **Alternative Slabs** with enough quantity
             alternatives = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Available Qty"] >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
 
             if not alternatives.empty:
-                st.warning("🔄 **Suggested Alternatives:**")
+                st.warning("🔄 **Suggested Alternatives (Click to Select):**")
                 for _, row in alternatives.iterrows():
-                    st.markdown(f"✅ **{row['Color']}** - {row['Available Qty']} sq ft available, ${row['SQ FT PRICE']}/sq ft")
+                    if st.button(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)"):
+                        st.session_state.selected_color = row['Color']
+                        st.experimental_rerun()
             else:
                 st.warning("⚠️ No suitable alternatives found.")
         else:
-            st.success(f"💰 **Estimated Sale Price: ${required_sqft * selected_slab.iloc[0]['SQ FT PRICE']:.2f}**")
+            material_cost = total_available_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
+            fabrication_cost = st.session_state.fab_cost * required_sqft
+            install_cost = st.session_state.install_cost * required_sqft
+            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
+            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
-        # ✅ Restore Google Search functionality
-        query = f"{selected_color} {selected_thickness} countertop"
-        google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-        st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+            # ✅ Restore Google Search functionality
+            query = f"{selected_color} {selected_thickness} countertop"
+            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+
+            with st.expander("🧐 Show Full Cost Breakdown"):
+                st.markdown(f"""
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **Total Sale Price:** ${sale_price:.2f}  
+                """)

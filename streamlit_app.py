@@ -10,12 +10,16 @@ file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/mai
 ADMIN_PASSWORD = "floform2024"
 
 # ✅ Initialize session state for settings
+if "material_cost" not in st.session_state:
+    st.session_state.material_cost = 0  # Default material cost per sq ft
+if "fab_cost" not in st.session_state:
+    st.session_state.fab_cost = 0  # Default fabrication cost per sq ft
 if "install_cost" not in st.session_state:
-    st.session_state.install_cost = 23  # Default install cost
-if "fabrication_cost" not in st.session_state:
-    st.session_state.fabrication_cost = 23  # Default fab cost
-if "margin" not in st.session_state:
-    st.session_state.margin = 1.2  # Default margin multiplier
+    st.session_state.install_cost = 23  # Default install cost per sq ft
+if "ib_margin" not in st.session_state:
+    st.session_state.ib_margin = 0.15  # Default IB margin (15%)
+if "sale_margin" not in st.session_state:
+    st.session_state.sale_margin = 0.15  # Default Sale margin (15%)
 if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  # Admin access flag
 if "df_inventory" not in st.session_state:
@@ -84,17 +88,25 @@ with st.sidebar:
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
         
+        # Editable material cost
+        st.session_state.material_cost = st.number_input("🛢 Material Cost per sq ft:", 
+                                                         value=st.session_state.material_cost, step=1.0)
+
+        # Editable fabrication cost
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
+                                                    value=st.session_state.fab_cost, step=1.0)
+
+        # Editable IB margin
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", 
+                                                     value=st.session_state.ib_margin, step=0.01, format="%.2f")
+
         # Editable install cost
         st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
-                                                        value=st.session_state.install_cost, step=1)
-        
-        # Editable fabrication cost
-        st.session_state.fabrication_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
-                                                             value=st.session_state.fabrication_cost, step=1)
+                                                        value=st.session_state.install_cost, step=1.0)
 
-        # Editable margin multiplier
-        st.session_state.margin = st.number_input("📈 Margin Multiplier:", 
-                                                  value=st.session_state.margin, step=0.1)
+        # Editable Sale margin
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
+                                                       value=st.session_state.sale_margin, step=0.01, format="%.2f")
 
 # 🎨 **UI Setup**
 st.title("🛠 Countertop Cost Estimator")
@@ -120,7 +132,6 @@ if st.button("📊 Estimate Cost"):
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
-        # 🔢 **Get Slab Price from Excel**
         selected_slab = df_inventory[
             (df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)
         ]
@@ -128,43 +139,31 @@ if st.button("📊 Estimate Cost"):
         if selected_slab.empty:
             st.error("❌ No slab found for the selected color and thickness.")
         else:
-            selected_slab = selected_slab.iloc[0]  # Get first match
-
+            selected_slab = selected_slab.iloc[0]
             available_sqft = selected_slab["Available Qty"]
-            sq_ft_price = selected_slab["SQ FT PRICE"]  # From Excel
-
             required_sqft = square_feet * 1.2  # **20% Waste Factor**
-            
+
             if required_sqft > available_sqft:
-                st.error("❌ Not enough material available for this selection (including 20% waste).")
+                st.error("❌ Not enough material available.")
             else:
                 # **Cost Calculations**
-                fabrication_cost = st.session_state.fabrication_cost
-                install_cost = st.session_state.install_cost
-                margin = st.session_state.margin
+                material_cost = st.session_state.material_cost * required_sqft
+                fabrication_cost = st.session_state.fab_cost * required_sqft
+                install_cost = st.session_state.install_cost * required_sqft
 
-                material_cost = sq_ft_price * required_sqft
-                total_fabrication_cost = fabrication_cost * required_sqft
-                total_install_cost = install_cost * required_sqft
-
-                ib_sq_ft_price = (sq_ft_price + fabrication_cost) * margin
-                total_ib_cost = ib_sq_ft_price * required_sqft
-
-                sale_price = (ib_sq_ft_price + install_cost) * margin * required_sqft
+                ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
+                sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
                 # ✅ **Display Final Price**
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
                 # 🧐 **Expander for Cost Breakdown**
                 with st.expander("🧐 Show Full Cost Breakdown"):
-                    st.write(f"📌 **Material**: {selected_color} ({selected_thickness})")
-                    st.write(f"🔲 **Required Sq Ft (20% waste included)**: {required_sqft:.2f} sq ft")
-                    
                     st.markdown(f"""
                     **💰 Cost Breakdown**  
                     - **Material Cost:** ${material_cost:.2f}  
-                    - **Fabrication Cost:** ${total_fabrication_cost:.2f}  
-                    - **Installation Cost:** ${total_install_cost:.2f}  
-                    - **IB Cost (Material + Fab * Margin):** ${total_ib_cost:.2f}  
-                    - **Total Sale Price:** ${sale_price:.2f}  
+                    - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                    - **IB Cost (Material + Fab + IB Margin):** ${ib_cost:.2f}  
+                    - **Installation Cost:** ${install_cost:.2f}  
+                    - **Total Sale Price (IB + Install + Sale Margin):** ${sale_price:.2f}  
                     """)

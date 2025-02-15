@@ -6,7 +6,7 @@ from io import BytesIO
 # ✅ GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# 🔑 Admin Password (Change this if needed)
+# 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
 
 # ✅ Initialize session state for settings
@@ -68,7 +68,7 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# 🎨 **Admin Panel for Editable Pricing Settings**
+# 🎨 **Admin Panel for Adjustable Pricing Settings**
 with st.sidebar:
     st.header("🔑 Admin Panel")
 
@@ -143,7 +143,13 @@ if st.button("📊 Estimate Cost"):
                 install_cost = st.session_state.install_cost
                 margin = st.session_state.margin
 
+                material_cost = sq_ft_price * required_sqft
+                total_fabrication_cost = fabrication_cost * required_sqft
+                total_install_cost = install_cost * required_sqft
+
                 ib_sq_ft_price = (sq_ft_price + fabrication_cost) * margin
+                total_ib_cost = ib_sq_ft_price * required_sqft
+
                 sale_price = (ib_sq_ft_price + install_cost) * margin * required_sqft
 
                 # ✅ **Display Final Price**
@@ -156,9 +162,9 @@ if st.button("📊 Estimate Cost"):
                     
                     st.markdown(f"""
                     **💰 Cost Breakdown**  
-                    - **Material Cost (per sq ft):** ${sq_ft_price:.2f}  
-                    - **Fabrication Cost (per sq ft):** ${fabrication_cost:.2f}  
-                    - **Installation Cost (per sq ft):** ${install_cost:.2f}  
-                    - **IB Cost per sq ft:** ${ib_sq_ft_price:.2f}  
+                    - **Material Cost:** ${material_cost:.2f}  
+                    - **Fabrication Cost:** ${total_fabrication_cost:.2f}  
+                    - **Installation Cost:** ${total_install_cost:.2f}  
+                    - **IB Cost (Material + Fab * Margin):** ${total_ib_cost:.2f}  
                     - **Total Sale Price:** ${sale_price:.2f}  
                     """)

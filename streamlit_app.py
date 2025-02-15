@@ -59,19 +59,19 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
+# ✅ Admin Login Function (Avoids Experimental Rerun Error)
+def admin_login():
+    if st.session_state.admin_password == ADMIN_PASSWORD:
+        st.session_state.admin_access = True
+
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
     st.header("🔑 Admin Login")
     
     if not st.session_state.admin_access:
-        admin_password = st.text_input("Enter Admin Password:", type="password")
-        if st.button("🔓 Login"):
-            if admin_password == ADMIN_PASSWORD:
-                st.session_state.admin_access = True
-                st.success("✅ Admin Access Granted!")
-                st.experimental_rerun()  # Refresh UI instantly
-            else:
-                st.error("❌ Incorrect Password")
+        st.text_input("Enter Admin Password:", type="password", key="admin_password", on_change=admin_login)
+        if st.session_state.admin_access:
+            st.success("✅ Admin Access Granted!")
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")

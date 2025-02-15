@@ -1,9 +1,7 @@
-import pandas as pd
 import streamlit as st
+import pandas as pd
 import requests
 from io import BytesIO
-import json
-import os
 
 # ✅ GitHub RAW File URL (Your Excel Data)
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
@@ -11,108 +9,57 @@ file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/mai
 # 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
 
-# 🔄 **Settings File to Persist Admin Rates**
-SETTINGS_FILE = "settings.json"
-
-# ✅ **Function to Load Saved Settings**
-def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            return json.load(f)
-    return {"fab_cost": 23, "install_cost": 23, "ib_margin": 0.15, "sale_margin": 0.15}
-
-# ✅ **Function to Save Settings**
-def save_settings():
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump({
-            "fab_cost": st.session_state.fab_cost,
-            "install_cost": st.session_state.install_cost,
-            "ib_margin": st.session_state.ib_margin,
-            "sale_margin": st.session_state.sale_margin
-        }, f)
-
-# ✅ Load saved settings if they exist
-saved_settings = load_settings()
-
-# ✅ **Ensure Session State Variables Exist**
-if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = float(saved_settings["fab_cost"])  
-if "install_cost" not in st.session_state:
-    st.session_state.install_cost = float(saved_settings["install_cost"])  
-if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = float(saved_settings["ib_margin"])  
-if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = float(saved_settings["sale_margin"])  
-if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  
-if "df_inventory" not in st.session_state:
-    st.session_state.df_inventory = pd.DataFrame()  
-
 # ✅ Load and clean the Excel file
 @st.cache_data
 def load_data():
     """Load slab data from the Excel sheet."""
-    try:
-        response = requests.get(file_url, timeout=10)
-        if response.status_code != 200:
-            st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
-            return None
+    response = requests.get(file_url, timeout=10)
+    xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
+    df = pd.read_excel(xls, sheet_name='Sheet1')
 
-        xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
-        df = pd.read_excel(xls, sheet_name='Sheet1')
+    # ✅ Extract Material, Color, and Thickness from "Product Variant"
+    df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
+    df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
 
-        # ✅ Clean column names (remove hidden spaces)
-        df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
+    # ✅ Normalize Thickness Formatting
+    df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
 
-        # ✅ Extract Material, Color, and Thickness from "Product Variant"
-        df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
-        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
+    # ✅ Filter valid thicknesses
+    valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
+    df = df[df['Thickness'].isin(valid_thicknesses)]
 
-        # ✅ Normalize Thickness Formatting
-        df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
+    # ✅ Convert numeric columns
+    numeric_cols = ['Available Qty', 'SQ FT PRICE']
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
 
-        # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
-        valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
-        df = df[df['Thickness'].isin(valid_thicknesses)]
+    return df
 
-        # ✅ Convert numeric columns
-        numeric_cols = ['Available Qty', 'SQ FT PRICE']
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
+df_inventory = load_data()
 
-        # ✅ Store DataFrame in session state
-        st.session_state.df_inventory = df
+# ✅ Initialize Admin Rates
+if "fab_cost" not in st.session_state:
+    st.session_state.fab_cost = 23  
+if "install_cost" not in st.session_state:
+    st.session_state.install_cost = 23  
+if "ib_margin" not in st.session_state:
+    st.session_state.ib_margin = 0.15  
+if "sale_margin" not in st.session_state:
+    st.session_state.sale_margin = 0.15  
+if "admin_access" not in st.session_state:
+    st.session_state.admin_access = False  
 
-        return df
-
-    except Exception as e:
-        st.error(f"❌ Error loading the file: {e}")
-        return None
-
-# Load the data if not already loaded
-if st.session_state.df_inventory.empty:
-    df_inventory = load_data()
-else:
-    df_inventory = st.session_state.df_inventory
-
-# 🎨 **Apply iOS-like UI Styling**
-st.markdown("""
+# 🎨 **UI Styling**
+st.markdown(
+    """
     <style>
-        .header {
-            font-size: 24px;
-            font-weight: bold;
-            color: #222;
-            text-align: center;
-            padding-bottom: 10px;
-        }
-        .stTextInput>div>div>input {
-            border-radius: 12px;
+        .estimate-button {
+            display: flex;
+            justify-content: center;
+            width: 100%;
             padding: 10px;
-            font-size: 16px;
-            border: 1px solid #ddd;
-            box-shadow: inset 0px 2px 5px rgba(0, 0, 0, 0.05);
         }
-        .ios-button {
+        .styled-button {
             background-color: #007AFF;
             color: white;
             font-size: 18px;
@@ -120,12 +67,18 @@ st.markdown("""
             padding: 12px;
             border-radius: 12px;
             text-align: center;
-            display: block;
             width: 100%;
-            margin-top: 15px;
+            display: inline-block;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .styled-button:hover {
+            background-color: #005EC2;
         }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True
+)
 
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
@@ -141,44 +94,73 @@ with st.sidebar:
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
 
-        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
-        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
-        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
-        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
+                                                    value=float(st.session_state.fab_cost), step=1.0)
 
-        save_settings()
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", 
+                                                     value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
+                                                        value=float(st.session_state.install_cost), step=1.0)
+
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
+                                                       value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
         if st.button("🔒 Logout"):
             st.session_state.admin_access = False
             st.experimental_rerun()
 
 # 🎨 **Main UI**
-st.markdown('<div class="header">🛠 Countertop Estimator</div>', unsafe_allow_html=True)
+st.title("🛠 Countertop Cost Estimator")
 
 square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
 thickness_options = ["1.2 cm", "2 cm", "3 cm"]
-selected_thickness = st.selectbox("🔲 Thickness:", thickness_options)
+selected_thickness = st.selectbox("🔲 Thickness:", thickness_options, index=2)
 
 available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
 selected_color = st.selectbox("🎨 Color:", sorted(available_colors)) if len(available_colors) > 0 else None
 
-if st.button("📊 Estimate Cost", key="estimate_cost"):
+if st.button("📊 Estimate Cost"):
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
-        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        if selected_slab.empty:
-            st.error("❌ No slab found for the selected color and thickness.")
+        selected_slabs = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
+        
+        total_available_sqft = selected_slabs["Available Qty"].sum()
+        required_sqft = square_feet * 1.2  # **20% Waste Factor**
+
+        if required_sqft > total_available_sqft:
+            st.error("❌ Not enough material available!")
         else:
-            selected_slab = selected_slab.iloc[0]
-            required_sqft = square_feet * 1.2  
-            material_cost = selected_slab["SQ FT PRICE"] * required_sqft
+            # ✅ Cost Calculations
+            sq_ft_price = selected_slabs.iloc[0]["SQ FT PRICE"]
+            material_cost = sq_ft_price * required_sqft
             fabrication_cost = st.session_state.fab_cost * required_sqft
             install_cost = st.session_state.install_cost * required_sqft
             ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
+            # ✅ Google Search URL
+            google_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+countertop"
+
+            # ✅ Display Estimate
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-            google_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+countertop"
-            st.markdown(f'<a href="{google_url}" class="ios-button" target="_blank">🔍 View Images</a>', unsafe_allow_html=True)
+            # ✅ View Images Button
+            st.markdown(f"""
+            <div class="estimate-button">
+                <a href="{google_url}" target="_blank" class="styled-button">🔍 View Images</a>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # ✅ Full Cost Breakdown
+            serial_numbers = ", ".join(selected_slabs["Serial Number"].astype(str).unique())
+            with st.expander("🧐 Show Full Cost Breakdown"):
+                st.markdown(f"""
+                - **Serial Numbers Used:** {serial_numbers}  
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **Total Sale Price:** ${sale_price:.2f}  
+                """)

@@ -80,10 +80,15 @@ def load_data():
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
 
-        # ✅ Store DataFrame in session state
-        st.session_state.df_inventory = df
+        # ✅ Sum Available Qty per Color + Thickness
+        df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg(
+            {"Available Qty": "sum", "SQ FT PRICE": "mean"}
+        )
 
-        return df
+        # ✅ Store DataFrame in session state
+        st.session_state.df_inventory = df_grouped
+
+        return df_grouped
 
     except Exception as e:
         st.error(f"❌ Error loading the file: {e}")
@@ -94,33 +99,6 @@ if st.session_state.df_inventory.empty:
     df_inventory = load_data()
 else:
     df_inventory = st.session_state.df_inventory
-
-# 🎛 **Admin Panel (Password Protected)**
-with st.sidebar:
-    st.header("🔑 Admin Panel")
-
-    if not st.session_state.admin_access:
-        password_input = st.text_input("Enter Admin Password:", type="password", key="unique_admin_password")
-        if st.button("🔓 Login"):
-            if password_input == ADMIN_PASSWORD:
-                st.session_state.admin_access = True
-                st.experimental_rerun()  # ✅ UI Refresh AFTER session update
-
-    if st.session_state.admin_access:
-        st.subheader("⚙️ Adjustable Rates")
-
-        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
-        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
-        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
-        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
-
-        # ✅ Save settings when any value is changed
-        save_settings()
-
-        # 🔓 **Logout Button**
-        if st.button("🔒 Logout"):
-            st.session_state.admin_access = False
-            st.experimental_rerun()  # ✅ Properly refreshes UI
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
@@ -145,15 +123,16 @@ if st.button("📊 Estimate Cost"):
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
-        matching_slabs = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        total_available_sqft = matching_slabs["Available Qty"].sum()
+        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
+        total_available_sqft = selected_slab["Available Qty"].sum()
         required_sqft = square_feet * 1.2  
 
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
+            st.warning(f"⚠️ Multiple slabs needed: {round(required_sqft / total_available_sqft, 2)} slabs required")
 
             # ✅ Suggest **Alternative Slabs** with enough quantity
-            alternatives = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Available Qty"].sum() >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
+            alternatives = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Available Qty"] >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
 
             if not alternatives.empty:
                 st.warning("🔄 **Suggested Alternatives:**")
@@ -162,7 +141,7 @@ if st.button("📊 Estimate Cost"):
             else:
                 st.warning("⚠️ No suitable alternatives found.")
         else:
-            st.success(f"💰 **Estimated Sale Price: ${required_sqft * matching_slabs.iloc[0]['SQ FT PRICE']:.2f}**")
+            st.success(f"💰 **Estimated Sale Price: ${required_sqft * selected_slab.iloc[0]['SQ FT PRICE']:.2f}**")
 
         # ✅ Restore Google Search functionality
         query = f"{selected_color} {selected_thickness} countertop"

@@ -4,6 +4,7 @@ import requests
 from io import BytesIO
 import json
 import os
+import re
 
 # ✅ GitHub RAW File URL (Your Excel Data)
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
@@ -68,9 +69,17 @@ def load_data():
         # ✅ Clean column names (remove hidden spaces)
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
-        # ✅ Extract Material, Color, and Thickness from "Product Variant"
-        df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
-        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
+        # ✅ Extract Brand, Location, and Color from "Product Variant"
+        df[['Brand', 'Rest']] = df['Product Variant'].str.split(' ', n=1, expand=True)
+        df[['Color', 'Extra']] = df['Rest'].str.rsplit('(', n=1, expand=True)
+        
+        # ✅ Extract Finish (If provided)
+        finishes = ["Brushed", "Polished", "Matte", "Satin"]
+        df["Finish"] = df["Color"].apply(lambda x: next((f for f in finishes if f in x), "Polished"))
+        
+        # ✅ Clean extracted data
+        df["Color"] = df["Color"].str.strip()
+        df["Finish"] = df["Finish"].str.strip()
 
         # ✅ Normalize Thickness Formatting
         df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
@@ -125,64 +134,28 @@ with st.sidebar:
         st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
                                                        value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
-        # ✅ Save settings when any value is changed
         save_settings()
 
-        # 🔓 **Logout Button**
         if st.button("🔒 Logout"):
             st.session_state.admin_access = False
-            st.experimental_rerun()  # ✅ Properly refreshes UI
+            st.experimental_rerun()
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 st.markdown("### Select your slab and get an estimate!")
 
-col1, col2 = st.columns(2)
-with col1:
-    square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
+brand_options = df_inventory["Brand"].unique()
+selected_brand = st.selectbox("🏢 Brand:", sorted(brand_options))
 
-with col2:
-    thickness_options = ["1.2 cm", "2 cm", "3 cm"]
-    selected_thickness = st.selectbox("🔲 Thickness:", thickness_options)
+thickness_options = ["1.2 cm", "2 cm", "3 cm"]
+selected_thickness = st.selectbox("🔲 Thickness:", thickness_options)
 
-available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
-if len(available_colors) > 0:
-    selected_color = st.selectbox("🎨 Color:", sorted(available_colors))
-else:
-    st.warning("⚠️ No colors available for this thickness.")
-    selected_color = None
+color_options = df_inventory[(df_inventory["Brand"] == selected_brand) & (df_inventory["Thickness"] == selected_thickness)]["Color"].unique()
+selected_color = st.selectbox("🎨 Color:", sorted(color_options))
 
-if st.button("📊 Estimate Cost"):
-    if selected_color is None:
-        st.error("❌ Please select a valid color.")
-    else:
-        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        if selected_slab.empty:
-            st.error("❌ No slab found for the selected color and thickness.")
-        else:
-            selected_slab = selected_slab.iloc[0]
-            available_sqft = selected_slab["Available Qty"]
-            sq_ft_price = float(selected_slab["SQ FT PRICE"])  
-            required_sqft = square_feet * 1.2  
+finish_options = df_inventory[df_inventory["Color"] == selected_color]["Finish"].unique()
+selected_finish = st.selectbox("✨ Finish:", sorted(finish_options))
 
-            material_cost = sq_ft_price * required_sqft
-            fabrication_cost = st.session_state.fab_cost * required_sqft
-            install_cost = st.session_state.install_cost * required_sqft
-            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
-
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
-
-            # ✅ Generate Google Search URL
-            query = f"{selected_color} {selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
-
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                """)
+query = f"{selected_brand} {selected_color} {selected_finish} countertop"
+google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)

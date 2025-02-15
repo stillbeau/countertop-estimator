@@ -142,12 +142,28 @@ if st.button("📊 Estimate Cost"):
         sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
         st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
-
-        # ✅ Restore Google Search functionality
-        query = f"{st.session_state.selected_color} {st.session_state.selected_thickness} countertop"
-        google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-        st.markdown(f"🔍 [Click here to view {st.session_state.selected_color} images]({google_url})", unsafe_allow_html=True)
-
+# ✅ Display Google Search Button
+st.markdown(
+    f"""
+    <div style="display: flex; justify-content: center; margin-top: 10px;">
+        <a href="{google_url}" target="_blank" style="
+            text-decoration: none;
+            background-color: #0073e6;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            display: inline-block;
+            text-align: center;
+            ">
+            🔍 View Images of {st.session_state.selected_color}
+        </a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+        
         # ✅ Display **Serial Numbers** in Breakdown
         serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
 

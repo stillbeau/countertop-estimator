@@ -6,7 +6,10 @@ from io import BytesIO
 # ✅ GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# ✅ Initialize session state
+# 🔑 Admin Password
+ADMIN_PASSWORD = "floform2024"
+
+# ✅ Initialize session state (Global Persistence)
 if "fab_cost" not in st.session_state:
     st.session_state.fab_cost = float(23)  
 if "install_cost" not in st.session_state:
@@ -15,6 +18,8 @@ if "ib_margin" not in st.session_state:
     st.session_state.ib_margin = float(0.15)  
 if "sale_margin" not in st.session_state:
     st.session_state.sale_margin = float(0.15)  
+if "admin_access" not in st.session_state:
+    st.session_state.admin_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
 
@@ -54,13 +59,26 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# 🎛 **Admin Panel (Always Available)**
+# 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
-    st.header("⚙️ Adjustable Rates")
-    st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
-    st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
-    st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
-    st.session_state.sale_margin = st.number_input("💰 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+    st.header("🔑 Admin Login")
+    
+    if not st.session_state.admin_access:
+        admin_password = st.text_input("Enter Admin Password:", type="password")
+        if st.button("🔓 Login"):
+            if admin_password == ADMIN_PASSWORD:
+                st.session_state.admin_access = True
+                st.success("✅ Admin Access Granted!")
+                st.experimental_rerun()  # Refresh UI instantly
+            else:
+                st.error("❌ Incorrect Password")
+
+    if st.session_state.admin_access:
+        st.subheader("⚙️ Adjustable Rates")
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
+        st.session_state.sale_margin = st.number_input("💰 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")

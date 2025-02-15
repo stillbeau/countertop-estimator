@@ -49,6 +49,8 @@ if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
 if "google_search_url" not in st.session_state:
     st.session_state.google_search_url = ""  
+if "show_google_button" not in st.session_state:
+    st.session_state.show_google_button = False  
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -150,7 +152,11 @@ else:
     st.warning("⚠️ No colors available for this thickness.")
     selected_color = None
 
-if st.button("📊 Estimate Cost"):
+col3, col4 = st.columns([1, 1])
+with col3:
+    estimate_clicked = st.button("📊 Estimate Cost")
+
+if estimate_clicked:
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
@@ -169,19 +175,4 @@ if st.button("📊 Estimate Cost"):
             ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
-
-            # ✅ Google Image Search Button (Updated UI)
-            query = f"{selected_color} {selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f'<a href="{google_url}" target="_blank" class="button">🔍 View Images</a>', unsafe_allow_html=True)
-
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                - **Serial Number:** {selected_slab["Serial Number"]}  
-                """)
+            st.session_state.google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{

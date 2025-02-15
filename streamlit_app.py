@@ -34,7 +34,7 @@ def save_settings():
 # ✅ Load saved settings if they exist
 saved_settings = load_settings()
 
-# ✅ Initialize session state with **persistent settings**
+# ✅ **Ensure Session State Variables Exist**
 if "fab_cost" not in st.session_state:
     st.session_state.fab_cost = float(saved_settings["fab_cost"])  
 if "install_cost" not in st.session_state:
@@ -44,7 +44,7 @@ if "ib_margin" not in st.session_state:
 if "sale_margin" not in st.session_state:
     st.session_state.sale_margin = float(saved_settings["sale_margin"])  
 if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  
+    st.session_state.admin_access = False  # ✅ Ensures the admin panel doesn't disappear
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
 if "show_google_search" not in st.session_state:
@@ -99,6 +99,44 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
+# ✅ **Admin Login Function**
+def admin_login():
+    if st.session_state.admin_password == ADMIN_PASSWORD:
+        st.session_state.admin_access = True
+        st.experimental_rerun()  # ✅ Refresh the UI so the admin panel appears
+
+# 🎛 **Admin Panel (Password Protected)**
+with st.sidebar:
+    st.header("🔑 Admin Panel")
+
+    if not st.session_state.admin_access:
+        st.text_input("Enter Admin Password:", type="password", key="admin_password", on_change=admin_login)
+        if st.session_state.admin_access:
+            st.success("✅ Admin Access Granted!")
+
+    if st.session_state.admin_access:
+        st.subheader("⚙️ Adjustable Rates")
+
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
+                                                    value=float(st.session_state.fab_cost), step=1.0)
+
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", 
+                                                     value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
+                                                        value=float(st.session_state.install_cost), step=1.0)
+
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
+                                                       value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+
+        # ✅ Save settings when any value is changed
+        save_settings()
+
+        # 🔓 **Logout Button**
+        if st.button("🔒 Logout"):
+            st.session_state.admin_access = False
+            st.experimental_rerun()  # ✅ Properly refreshes UI
+
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 st.markdown("### Select your slab and get an estimate!")
@@ -139,21 +177,6 @@ if st.button("📊 Estimate Cost"):
 
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-            # ✅ Generate Google Search URL
             query = f"{selected_color} {selected_thickness} countertop"
             google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.session_state.google_search_url = google_url
-            st.session_state.show_google_search = True
-
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                """)
-
-# ✅ Google Image Search Button (Appears After Estimating Cost)
-if st.session_state.show_google_search:
-    st.markdown(f"🔍 Want to see this color? [Click here for Google Images]({st.session_state.google_search_url})", unsafe_allow_html=True)
+            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)

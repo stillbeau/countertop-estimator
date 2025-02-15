@@ -104,27 +104,6 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# 🎛 **Admin Panel (Password Protected)**
-with st.sidebar:
-    st.header("🔑 Admin Panel")
-    if not st.session_state.admin_access:
-        password_input = st.text_input("Enter Admin Password:", type="password")
-        if st.button("🔓 Login"):
-            if password_input == ADMIN_PASSWORD:
-                st.session_state.admin_access = True
-                st.experimental_rerun()
-    
-    if st.session_state.admin_access:
-        st.subheader("⚙️ Adjustable Rates")
-        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
-        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
-        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
-        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
-        save_settings()
-        if st.button("🔒 Logout"):
-            st.session_state.admin_access = False
-            st.experimental_rerun()
-
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 
@@ -141,6 +120,15 @@ if st.button("📊 Estimate Cost"):
     install_cost = st.session_state.install_cost * required_sqft
     ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
     sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
+    serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
+    
     st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+    
     with st.expander("🧐 Show Full Cost Breakdown"):
-        st.markdown(f"Material: ${material_cost:.2f}\nFabrication: ${fabrication_cost:.2f}\nInstallation: ${install_cost:.2f}\nTotal: ${sale_price:.2f}")
+        st.markdown(f"""
+        **Material Cost:** ${material_cost:.2f}  
+        **Fabrication Cost:** ${fabrication_cost:.2f}  
+        **Installation Cost:** ${install_cost:.2f}  
+        **Total Sale Price:** ${sale_price:.2f}  
+        **Slab Serial Number(s):** {serial_numbers}  
+        """)

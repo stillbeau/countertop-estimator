@@ -1,152 +1,78 @@
-import os
-import pandas as pd
 import streamlit as st
+import pandas as pd
 import requests
 from io import BytesIO
-import json
 
-# ✅ Google Sheets Links
-SHEET_URLS = {
-    "Vernon": "https://docs.google.com/spreadsheets/d/{VERNON_SHEET_ID}/gviz/tq?tqx=out:csv",
-    "Abbotsford": "https://docs.google.com/spreadsheets/d/{ABBOTSFORD_SHEET_ID}/gviz/tq?tqx=out:csv"
-}
+# 🔹 File URL from your updated Google Sheet or GitHub
+file_url = "YOUR_NEW_FILE_URL_HERE.xlsx"  # Replace with actual file URL
 
-# 🔑 Admin Password
-ADMIN_PASSWORD = "floform2024"
-
-# 🔄 **Settings File to Persist Admin Rates**
-SETTINGS_FILE = "settings.json"
-
-# ✅ **Function to Load Saved Settings**
-def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            return json.load(f)
-    return {"fab_cost": 23, "install_cost": 23, "ib_margin": 0.15, "sale_margin": 0.15}
-
-# ✅ **Function to Save Settings**
-def save_settings():
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump({
-            "fab_cost": st.session_state.fab_cost,
-            "install_cost": st.session_state.install_cost,
-            "ib_margin": st.session_state.ib_margin,
-            "sale_margin": st.session_state.sale_margin
-        }, f)
-
-# ✅ Load saved settings
-saved_settings = load_settings()
-
-# ✅ **Ensure Session State Variables Exist**
-if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = float(saved_settings["fab_cost"])
-if "install_cost" not in st.session_state:
-    st.session_state.install_cost = float(saved_settings["install_cost"])
-if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = float(saved_settings["ib_margin"])
-if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = float(saved_settings["sale_margin"])
-if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False
-if "df_inventory" not in st.session_state:
-    st.session_state.df_inventory = pd.DataFrame()
-
-# ✅ Load and clean the Google Sheets data
 @st.cache_data
-def load_data(location):
-    """Load inventory data from Google Sheets based on selected location."""
-    try:
-        url = SHEET_URLS.get(location)
-        if not url:
-            st.error("❌ Invalid location selected.")
-            return None
-
-        df = pd.read_csv(url)
-
-        # ✅ Clean column names (remove hidden spaces)
-        df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
-
-        # ✅ Extract Brand, Color, Thickness, Finish from "Product"
-        df[['Brand', 'Color_Thickness']] = df['Product'].str.extract(r'(\D+?)\s+(.+)')
-        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', 1, expand=True)
-
-        # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
-        valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
-        df = df[df['Thickness'].isin(valid_thicknesses)]
-
-        # ✅ Ensure numeric conversions
-        df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors='coerce').fillna(0)
-        df["Serialized On Hand Cost"] = pd.to_numeric(df["Serialized On Hand Cost"], errors='coerce').fillna(0)
-
-        # ✅ Calculate SQ FT PRICE
-        df["SQ FT PRICE"] = df["Serialized On Hand Cost"] / df["Available Qty"]
-        df["SQ FT PRICE"] = df["SQ FT PRICE"].replace([float('inf'), -float('inf')], 0)
-
-        # ✅ Store serial numbers for each Color + Thickness
-        df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
-            "Available Qty": "sum",
-            "SQ FT PRICE": "mean",
-            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))
-        })
-
-        return df_grouped
-
-    except Exception as e:
-        st.error(f"❌ Error loading the file: {e}")
+def load_data():
+    """Load and clean the updated Excel file."""
+    response = requests.get(file_url)
+    if response.status_code != 200:
+        st.error("Error loading the file. Check the file URL.")
         return None
 
-# 🎨 **Main UI**
-st.title("🛠 Countertop Cost Estimator")
+    xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
+    df = pd.read_excel(xls, sheet_name='Sheet1')
 
-# 🌍 **Select Location**
-location = st.selectbox("📍 Select Location:", ["Vernon", "Abbotsford"])
-df_inventory = load_data(location)
+    # Ensure column names are clean
+    df.columns = df.columns.str.strip()
 
-# 📏 **Square Feet Input**
-square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
-selected_thickness = st.selectbox("🔲 Thickness:", ["1.2 cm", "2 cm", "3 cm"], index=2)
+    # Convert numerical fields
+    df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors='coerce')
+    df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace('[\$,]', '', regex=True).astype(float)
 
-# Ensure colors exist for the selected thickness
-if df_inventory is not None:
-    available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
-    selected_color = st.selectbox("🎨 Color:", sorted(available_colors) if len(available_colors) > 0 else [])
+    return df
 
-# 📊 **Estimate Cost Button**
-if st.button("📊 Estimate Cost"):
-    if not selected_color or df_inventory is None:
-        st.error("❌ Please select a valid color.")
-    else:
-        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        total_available_sqft = selected_slab["Available Qty"].sum()
-        required_sqft = square_feet * 1.2  # Including waste factor
+# Load inventory
+df_inventory = load_data()
 
-        if required_sqft > total_available_sqft:
-            st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
-        else:
-            # ✅ Calculate Costs Based on Square Footage
-            sq_ft_price = selected_slab.iloc[0]["SQ FT PRICE"]
-            material_cost = required_sqft * sq_ft_price
-            fabrication_cost = st.session_state.fab_cost * required_sqft
-            install_cost = st.session_state.install_cost * required_sqft
-            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
+if df_inventory is None:
+    st.stop()
 
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+# 🎛 Editable Control Panel for Pricing Adjustments
+st.sidebar.header("🔧 Pricing Control Panel")
+default_fabrication_cost = st.sidebar.number_input("Fabrication Cost per Sq Ft ($)", value=23.00)
+default_temp_install_cost = st.sidebar.number_input("Temp/Install Cost per Sq Ft ($)", value=23.00)
 
-            # ✅ Restore Google Search functionality
-            query = f"{selected_color} {selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+# 🎨 Dropdowns based on the cleaned file
+thickness_options = df_inventory["Thickness"].unique()
+selected_thickness = st.selectbox("Select Thickness", thickness_options)
 
-            # ✅ Display **Serial Numbers** in Breakdown
-            serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
+# Filter colors based on the selected thickness
+filtered_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].unique()
+selected_color = st.selectbox("Select Color", filtered_colors)
 
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                - **Slab Serial Number(s):** {serial_numbers}  
-                """)
+# Find matching slab details
+selected_slab = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Color"] == selected_color)]
+
+if selected_slab.empty:
+    st.warning("No slabs found for the selected combination.")
+    st.stop()
+
+# Show available slabs and details
+st.write(f"**Available Slabs:** {selected_slab['Available Qty'].sum()} sq ft")
+
+# 📌 Pricing Calculations
+slab_cost = selected_slab.iloc[0]["Serialized On Hand Cost"]
+available_sqft = selected_slab.iloc[0]["Available Qty"]
+sqft_price = slab_cost / available_sqft  # Price per sq ft
+ib_price = (sqft_price + default_fabrication_cost) * 1.2  # IB Cost
+sale_price = (ib_price + default_temp_install_cost) * 1.2  # Final sale price
+
+# 🛒 Display Pricing
+if st.button("Estimate Price"):
+    st.subheader("💰 Estimated Pricing")
+    st.write(f"**Sq Ft Price:** ${sqft_price:.2f}")
+    st.write(f"**IB Price:** ${ib_price:.2f}")
+    st.write(f"**Sale Price:** ${sale_price:.2f}")
+
+    # Expandable full details
+    with st.expander("📊 Full Cost Breakdown"):
+        st.write(f"- **Fabrication Cost:** ${default_fabrication_cost}")
+        st.write(f"- **Temp/Install Cost:** ${default_temp_install_cost}")
+        st.write(f"- **Base Sq Ft Cost:** ${sqft_price:.2f}")
+        st.write(f"- **IB Sq Ft Price:** ${ib_price:.2f}")
+        st.write(f"- **Final Sale Price:** ${sale_price:.2f}")

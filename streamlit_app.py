@@ -64,12 +64,17 @@ def load_data():
         # ✅ Ensure column names are stripped of extra spaces
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
-        # ✅ Ensure 'Product Variant' Column Exists
-        if "Product Variant" not in df.columns:
-            st.error("❌ 'Product Variant' column is missing in the Excel file.")
+        # ✅ Print all column names for debugging
+        st.write("📋 **Columns in dataset:**", list(df.columns))
+
+        # ✅ Ensure required columns exist
+        required_columns = ["Product Variant", "Available Qty", "SQ FT PRICE"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            st.error(f"❌ Missing required columns: {missing_columns}")
             return None
 
-        # ✅ Convert to string in case of any type mismatches
+        # ✅ Convert "Product Variant" to string (in case it's misread as float)
         df["Product Variant"] = df["Product Variant"].astype(str)
 
         # ✅ Extract Brand, Color, and Finish
@@ -81,6 +86,11 @@ def load_data():
         finishes = ["Brushed", "Polished", "Matte", "Satin"]
         df["Finish"] = df["Color"].apply(lambda x: next((f for f in finishes if isinstance(x, str) and f in x), "Polished"))
         df["Finish"] = df["Finish"].str.strip()
+
+        # ✅ Ensure 'Thickness' column exists
+        if "Thickness" not in df.columns:
+            st.error("❌ 'Thickness' column is missing from the Excel file.")
+            return None
 
         # ✅ Normalize Thickness Formatting
         df['Thickness'] = df['Thickness'].astype(str).str.replace("cm", " cm", regex=False).str.strip()
@@ -170,12 +180,5 @@ if brand_options:
     else:
         st.warning("⚠️ No colors available for this brand & thickness.")
         selected_color = None
-
-    finish_options = df_inventory[df_inventory["Color"] == selected_color]["Finish"].unique()
-    selected_finish = st.selectbox("✨ Finish:", sorted(finish_options))
-
-    query = f"{selected_brand} {selected_color} {selected_finish} countertop"
-    google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-    st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
 else:
     st.error("❌ No brands found in the dataset.")

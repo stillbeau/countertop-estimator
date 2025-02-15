@@ -6,10 +6,11 @@ from io import BytesIO
 # ✅ GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# 🔑 Admin Password
+# 🔑 Admin Passwords
 ADMIN_PASSWORD = "floform2024"
+BREAKDOWN_PASSWORD = "floform"  # 🔒 Password for cost breakdown
 
-# ✅ Initialize session state with numeric values (forcing float type)
+# ✅ Initialize session state for settings
 if "fab_cost" not in st.session_state or not isinstance(st.session_state.fab_cost, (int, float)):
     st.session_state.fab_cost = float(23)  # ✅ Default fabrication cost per sq ft
 if "install_cost" not in st.session_state or not isinstance(st.session_state.install_cost, (int, float)):
@@ -20,6 +21,8 @@ if "sale_margin" not in st.session_state or not isinstance(st.session_state.sale
     st.session_state.sale_margin = float(0.15)  # Default Sale margin (15%)
 if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  # Admin access flag
+if "breakdown_access" not in st.session_state:
+    st.session_state.breakdown_access = False  # 🔒 Cost breakdown access flag
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  # Empty DataFrame until loaded
 
@@ -86,7 +89,6 @@ with st.sidebar:
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
 
-        # ✅ Ensure only valid numbers are used
         st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
                                                     value=float(st.session_state.fab_cost), step=1.0)
 
@@ -149,8 +151,17 @@ if st.button("📊 Estimate Cost"):
                 # ✅ **Display Final Price**
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-                # 🧐 **Expander for Cost Breakdown**
-                with st.expander("🧐 Show Full Cost Breakdown"):
+                # 🧐 **Password-Protected Cost Breakdown**
+                if not st.session_state.breakdown_access:
+                    breakdown_password = st.text_input("🔒 Enter password for full breakdown:", type="password")
+                    if st.button("🔓 Unlock Breakdown"):
+                        if breakdown_password == BREAKDOWN_PASSWORD:
+                            st.session_state.breakdown_access = True
+                            st.success("✅ Cost Breakdown Unlocked!")
+                        else:
+                            st.error("❌ Incorrect password!")
+
+                if st.session_state.breakdown_access:
                     st.markdown(f"""
                     **💰 Cost Breakdown**  
                     - **Material Cost (from Excel):** ${material_cost:.2f}  

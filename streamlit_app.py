@@ -66,9 +66,10 @@ else:
 with st.sidebar:
     st.header("🔑 Admin Panel")
     password_input = st.text_input("Enter Admin Password:", type="password")
-    if password_input == ADMIN_PASSWORD:
-        st.session_state.admin_access = True
-        st.success("✅ Admin Access Granted!")
+    if st.button("🔓 Login"):
+        if password_input == ADMIN_PASSWORD:
+            st.session_state.admin_access = True
+            st.success("✅ Admin Access Granted!")
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
@@ -117,14 +118,16 @@ if st.button("📊 Estimate Cost"):
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
                 # 🔒 **Password-Protected Cost Breakdown**
-                breakdown_password = st.text_input("🔑 Enter password for cost breakdown:", type="password", key="breakdown_pass")
-                
-                if breakdown_password == BREAKDOWN_PASSWORD:
-                    st.session_state.breakdown_access = True
+                if not st.session_state.breakdown_access:
+                    password_attempt = st.text_input("🔑 Enter password for cost breakdown:", type="password", key="breakdown_pass")
+
+                    if password_attempt == BREAKDOWN_PASSWORD:
+                        st.session_state.breakdown_access = True
+                        st.experimental_rerun()  # ✅ Instantly refresh UI to show the breakdown
 
                 # ✅ Show only if unlocked
                 if st.session_state.breakdown_access:
-                    with st.expander("💰 Full Cost Breakdown"):
+                    with st.expander("💰 Full Cost Breakdown", expanded=True):
                         st.markdown(f"""
                         **💰 Cost Breakdown**  
                         - **Material Cost (from Excel):** ${material_cost:.2f}  

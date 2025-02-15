@@ -142,4 +142,5 @@ if st.button("📊 Estimate Cost"):
     ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
     sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
     st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
-    st.expander("🧐 Show Full Cost Breakdown").markdown(f"Material: ${material_cost:.2f}\nFabrication: ${fabrication_cost:.2f}\nInstallation: ${install_cost:.2f}\nTotal: ${sale_price:.2f}")
+    with st.expander("🧐 Show Full Cost Breakdown"):
+        st.markdown(f"Material: ${material_cost:.2f}\nFabrication: ${fabrication_cost:.2f}\nInstallation: ${install_cost:.2f}\nTotal: ${sale_price:.2f}")

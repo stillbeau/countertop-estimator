@@ -115,14 +115,10 @@ square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
 thickness_options = ["1.2 cm", "2 cm", "3 cm"]
 st.session_state.selected_thickness = st.selectbox("🔲 Thickness:", thickness_options, index=thickness_options.index(st.session_state.selected_thickness))
 
-# 🎨 **Grid-Based Color Selection**
+# 🎨 **Dropdown-Based Color Selection**
 available_colors = df_inventory[df_inventory["Thickness"] == st.session_state.selected_thickness]["Color"].dropna().unique()
 if len(available_colors) > 0:
-    st.markdown("### 🎨 Select a Color:")
-    cols = st.columns(4)  # ✅ Display 4 color buttons per row
-    for i, color in enumerate(sorted(available_colors)):
-        if cols[i % 4].button(color):
-            st.session_state.selected_color = color  # ✅ Select color when clicked
+    st.session_state.selected_color = st.selectbox("🎨 Select a Color:", sorted(available_colors))
 else:
     st.warning("⚠️ No colors available for this thickness.")
     st.session_state.selected_color = None

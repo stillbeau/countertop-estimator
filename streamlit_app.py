@@ -2,13 +2,14 @@ import os
 import pandas as pd
 import streamlit as st
 import requests
-from io import BytesIO
 import json
+from io import BytesIO
 
-# ✅ Google Sheets URLs
+# ✅ Google Sheets URLs for Vernon & Abbotsford Inventory
 VERNON_SHEET_ID = "17uClLZ2FpynR6Qck_Vq-OkLetvxGv_w0VLQFVct0GHQ"
 ABBOTSFORD_SHEET_ID = "1KO_O43o5y8O5NF9X6hxYiQFxSJPAJm6-2gcOXgCRPMg"
-BASE_URL = "https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=out:csv"
+
+BASE_GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=out:csv"
 
 # 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
@@ -52,20 +53,28 @@ if "df_inventory" not in st.session_state:
 if "selected_color" not in st.session_state:
     st.session_state.selected_color = None
 if "selected_thickness" not in st.session_state:
-    st.session_state.selected_thickness = "3 cm"
-if "selected_location" not in st.session_state:
-    st.session_state.selected_location = "Vernon"
+    st.session_state.selected_thickness = "3 cm"  # Default thickness to 3 cm
 
-# ✅ Load and clean the Google Sheets Data
+# ✅ Load and clean the Excel file
 @st.cache_data
 def load_data(sheet_id):
-    """Load slab data from the Google Sheets."""
+    """Load slab data from the Google Sheet."""
     try:
-        url = BASE_URL.format(sheet_id)
-        df = pd.read_csv(url, dtype=str)  # Read all as string to prevent float conversion issues
-        df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)  # Remove extra spaces
+        file_url = BASE_GOOGLE_SHEETS_URL.format(sheet_id)
+        df = pd.read_csv(file_url)
 
-        # ✅ Extract Material, Color, Thickness, and Serial Number
+        # ✅ Clean column names (remove hidden spaces)
+        df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
+
+        # ✅ Ensure necessary columns exist
+        required_columns = ["Product Variant", "Available Qty", "SQ FT PRICE", "Serial Number"]
+        missing_columns = [col for col in required_columns if col not in df.columns]
+
+        if missing_columns:
+            st.error(f"⚠️ Missing required columns: {missing_columns}")
+            return None
+
+        # ✅ Extract Material, Color, and Thickness from "Product Variant"
         df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
         df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', 1, expand=True)
         df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
@@ -74,7 +83,7 @@ def load_data(sheet_id):
         valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
         df = df[df['Thickness'].isin(valid_thicknesses)]
 
-        # ✅ Convert numeric columns safely
+        # ✅ Convert numeric columns
         numeric_cols = ['Available Qty', 'SQ FT PRICE']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -83,21 +92,31 @@ def load_data(sheet_id):
         df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
             "Available Qty": "sum",
             "SQ FT PRICE": "mean",
-            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))
+            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))  # Combine Serial Numbers
         })
 
         return df_grouped
+
     except Exception as e:
         st.error(f"❌ Error loading the file: {e}")
-        return pd.DataFrame()
+        return None
+
+# 🎨 **Select Location**
+st.sidebar.header("📍 Select Location")
+location = st.sidebar.radio("Choose a location:", ["Vernon", "Abbotsford"])
+
+# ✅ Load inventory based on selected location
+if location == "Vernon":
+    df_inventory = load_data(VERNON_SHEET_ID)
+else:
+    df_inventory = load_data(ABBOTSFORD_SHEET_ID)
+
+# ✅ Store in session state
+if df_inventory is not None:
+    st.session_state.df_inventory = df_inventory
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
-
-# ✅ Location Selection
-st.session_state.selected_location = st.selectbox("📍 Select Location:", ["Vernon", "Abbotsford"])
-
-df_inventory = load_data(VERNON_SHEET_ID if st.session_state.selected_location == "Vernon" else ABBOTSFORD_SHEET_ID)
 
 square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
 selected_thickness = st.selectbox("🔲 Thickness:", ["1.2 cm", "2 cm", "3 cm"], index=2)

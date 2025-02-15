@@ -175,4 +175,11 @@ if estimate_clicked:
             ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
-            st.session_state.google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{
+            st.session_state.google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{selected_thickness}+countertop"
+            st.session_state.show_google_button = True
+
+            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+with col4:
+    if st.session_state.show_google_button:
+        st.markdown(f'<a href="{st.session_state.google_search_url}" target="_blank"><button style="padding:10px 15px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">🔍 View Images</button></a>', unsafe_allow_html=True)

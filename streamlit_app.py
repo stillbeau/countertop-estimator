@@ -173,10 +173,15 @@ if st.button("📊 Estimate Cost"):
 
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-            # ✅ Show "View Images" Button Below Estimate Price
-            google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color.replace(' ', '+')}+{selected_thickness}+countertop"
-            st.markdown(f'[🔍 **View Images**]({google_search_url})', unsafe_allow_html=True)
+            # ✅ Generate a clean Google Search Query
+clean_color_name = " ".join(selected_color.split(" ")[1:])  # Removes brand/location codes
+google_search_url = f"https://www.google.com/search?tbm=isch&q={clean_color_name.replace(' ', '+')}+{selected_thickness}+countertop"
 
+# ✅ Display View Images button properly formatted below the estimate
+st.markdown(f'<div style="text-align: center; margin-top: 10px;">'
+            f'<a href="{google_search_url}" target="_blank" style="padding: 8px 16px; background-color: #007BFF; '
+            f'color: white; text-decoration: none; border-radius: 5px; font-size: 16px;">🔍 View Images</a>'
+            f'</div>', unsafe_allow_html=True)
             with st.expander("🧐 Show Full Cost Breakdown"):
                 st.markdown(f"""
                 - **Material Cost:** ${material_cost:.2f}  

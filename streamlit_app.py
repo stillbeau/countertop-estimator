@@ -51,7 +51,13 @@ def load_data():
         # ✅ Store unique colors in session state
         st.session_state.available_colors = sorted(df['Color'].dropna().unique())
 
-        return df[['Color', 'Thickness', 'Material']]
+        # ✅ Load sq ft prices from Excel (if available)
+        for _, row in df.iterrows():
+            color = row["Color"]
+            if color not in st.session_state.sq_ft_prices:  # Only update if not manually set
+                st.session_state.sq_ft_prices[color] = row.get("SQ FT PRICE", 0)
+
+        return df[['Color', 'Thickness', 'Material', 'SQ FT PRICE']]
     
     except Exception as e:
         st.error(f"❌ Error while loading the file: {e}")
@@ -84,16 +90,16 @@ with st.sidebar:
                                                              value=st.session_state.fabrication_cost, step=1)
 
         # Editable slab pricing per color
-        new_price_color = st.selectbox("🎨 Select Color to Update:", st.session_state.available_colors)
-        new_price_value = st.number_input("💰 Slab Price (Total Slab Cost in $):", min_value=0.0, step=50.0)
-        new_slab_sq_ft = st.number_input("📏 Slab Size in Square Feet:", min_value=1.0, step=1.0)
+        if st.session_state.available_colors:
+            new_price_color = st.selectbox("🎨 Select Color to Update:", st.session_state.available_colors)
+            new_price_value = st.number_input("💰 New Sq Ft Price for Selected Color:", min_value=0.0, step=1.0)
 
-        if st.button("✅ Update Price"):
-            if new_price_color and new_price_value and new_slab_sq_ft:
-                st.session_state.sq_ft_prices[new_price_color] = new_price_value / new_slab_sq_ft
-                st.success(f"✅ Price updated: {new_price_color} → ${st.session_state.sq_ft_prices[new_price_color]:.2f}/sq ft")
-            else:
-                st.error("⚠️ Please enter a valid color, slab price, and slab size.")
+            if st.button("✅ Update Price"):
+                if new_price_color:
+                    st.session_state.sq_ft_prices[new_price_color] = new_price_value
+                    st.success(f"✅ Updated {new_price_color} → ${new_price_value:.2f}/sq ft")
+                else:
+                    st.error("⚠️ Please select a color.")
 
 # 🎨 **UI Setup**
 st.title("🛠 Countertop Cost Estimator")
@@ -106,11 +112,11 @@ square_feet = st.number_input("📐 Enter Square Feet Needed:", min_value=1, ste
 thickness_options = ["1.2 cm", "2 cm", "3 cm"]
 selected_thickness = st.selectbox("🔲 Select Thickness:", thickness_options)
 
-# 🎨 **Color Dropdown (Auto-Populated from Excel)**
+# 🎨 **Color Dropdown (Populated from Excel)**
 if st.session_state.available_colors:
     selected_color = st.selectbox("🎨 Select Color:", st.session_state.available_colors)
 else:
-    st.warning("⚠️ No colors available. Please check the Excel file or update pricing in Admin Panel.")
+    st.warning("⚠️ No colors available. Please check the Excel file.")
     selected_color = None
 
 # 📊 **Estimate Cost Button**

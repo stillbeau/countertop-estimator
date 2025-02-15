@@ -12,87 +12,22 @@ ABBOTSFORD_SHEET_ID = "1KO_O43o5y8O5NF9X6hxYiQFxSJPAJm6-2gcOXgCRPMg"
 
 BASE_GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=out:csv"
 
-# 🔑 Admin Password
-ADMIN_PASSWORD = "floform2024"
-
-# 🔄 **Settings File to Persist Admin Rates**
-SETTINGS_FILE = "settings.json"
-
-# ✅ **Function to Load Saved Settings**
-def load_settings():
-    if os.path.exists(SETTINGS_FILE):
-        with open(SETTINGS_FILE, "r") as f:
-            return json.load(f)
-    return {"fab_cost": 23, "install_cost": 23, "ib_margin": 0.15, "sale_margin": 0.15}
-
-# ✅ **Function to Save Settings**
-def save_settings():
-    with open(SETTINGS_FILE, "w") as f:
-        json.dump({
-            "fab_cost": st.session_state.fab_cost,
-            "install_cost": st.session_state.install_cost,
-            "ib_margin": st.session_state.ib_margin,
-            "sale_margin": st.session_state.sale_margin
-        }, f)
-
-# ✅ Load saved settings if they exist
-saved_settings = load_settings()
-
-# ✅ **Ensure Session State Variables Exist**
-if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = float(saved_settings["fab_cost"])
-if "install_cost" not in st.session_state:
-    st.session_state.install_cost = float(saved_settings["install_cost"])
-if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = float(saved_settings["ib_margin"])
-if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = float(saved_settings["sale_margin"])
-if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False
-if "df_inventory" not in st.session_state:
-    st.session_state.df_inventory = pd.DataFrame()
-if "selected_color" not in st.session_state:
-    st.session_state.selected_color = None
-if "selected_thickness" not in st.session_state:
-    st.session_state.selected_thickness = "3 cm"  # Default thickness to 3 cm
-
-# ✅ **Function to Extract Brand, Color, and Thickness**
-def extract_product_details(product_str):
-    try:
-        # Remove leading numbers and location codes (e.g., "17 - Caesarstone (ABB)")
-        product_str = re.sub(r"^\d+\s*-\s*", "", product_str)  # Remove "17 -"
-        product_str = re.sub(r"\(\w+\)", "", product_str).strip()  # Remove "(ABB)"
-
-        # Extract brand (first word)
-        brand = product_str.split(" ")[0].strip()
-
-        # Extract thickness (e.g., "2cm" or "3cm" at the end)
-        match = re.search(r"(\d+cm)$", product_str)
-        thickness = match.group(1) if match else None
-
-        # Extract color (everything between brand and thickness)
-        color = product_str.replace(brand, "").replace(thickness, "").strip() if thickness else product_str[len(brand):].strip()
-
-        # Format thickness correctly
-        if thickness:
-            thickness = thickness.replace("cm", " cm")
-
-        return brand, color, thickness
-    except Exception as e:
-        return "Unknown", "Unknown", "Unknown"
-
-# ✅ **Load and clean the Google Sheets data**
+# ✅ Function to Load Inventory Data
 @st.cache_data
 def load_data(sheet_id):
-    """Load slab data from the Google Sheet and process it."""
+    """Load slab data from Google Sheets."""
     try:
         file_url = BASE_GOOGLE_SHEETS_URL.format(sheet_id)
         df = pd.read_csv(file_url)
 
-        # ✅ Clean column names (remove hidden spaces)
+        if df.empty:
+            st.error("⚠️ Data failed to load. Check if the sheet is public.")
+            return None
+
+        # ✅ Clean column names
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
-        # ✅ Ensure necessary columns exist
+        # ✅ Ensure required columns exist
         required_columns = ["Product", "Available Qty", "Serialized On Hand Cost", "Serial Number"]
         missing_columns = [col for col in required_columns if col not in df.columns]
 
@@ -101,27 +36,33 @@ def load_data(sheet_id):
             return None
 
         # ✅ Extract Brand, Color, and Thickness
+        def extract_product_details(product_str):
+            """Extracts Brand, Color, and Thickness from Product column."""
+            if not isinstance(product_str, str):
+                return "Unknown", "Unknown", "Unknown"
+            product_str = re.sub(r"^\d+\s*-\s*", "", product_str)  # Remove leading numbers
+            product_str = re.sub(r"\(\w+\)", "", product_str).strip()  # Remove "(ABB)"
+            brand = product_str.split(" ")[0].strip()
+            match = re.search(r"(\d+cm)$", product_str)
+            thickness = match.group(1) if match else None
+            color = product_str.replace(brand, "").replace(thickness, "").strip() if thickness else product_str[len(brand):].strip()
+            return brand, color, thickness.replace("cm", " cm") if thickness else "Unknown"
+
         df[["Brand", "Color", "Thickness"]] = df["Product"].apply(lambda x: pd.Series(extract_product_details(str(x))))
 
-        # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
+        # ✅ Filter valid thicknesses
         valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
         df = df[df['Thickness'].isin(valid_thicknesses)]
 
-        # ✅ Calculate SQ FT PRICE
+        # ✅ Calculate SQ FT PRICE safely
         df["SQ FT PRICE"] = df["Serialized On Hand Cost"] / df["Available Qty"]
-        df["SQ FT PRICE"] = df["SQ FT PRICE"].fillna(0)  # Replace NaN with 0
-        df["SQ FT PRICE"] = df["SQ FT PRICE"].replace([float("inf"), -float("inf")], 0)  # Handle division errors
+        df["SQ FT PRICE"] = df["SQ FT PRICE"].fillna(0).replace([float("inf"), -float("inf")], 0)
 
-        # ✅ Convert numeric columns
-        numeric_cols = ['Available Qty', 'SQ FT PRICE']
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-
-        # ✅ Group by Color & Thickness, select max price & combine serial numbers
+        # ✅ Group by Color & Thickness
         df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
             "Available Qty": "sum",
-            "SQ FT PRICE": "max",  # ✅ Use highest price if duplicates exist
-            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))  # Combine Serial Numbers
+            "SQ FT PRICE": "max",
+            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))
         })
 
         return df_grouped
@@ -140,9 +81,10 @@ if location == "Vernon":
 else:
     df_inventory = load_data(ABBOTSFORD_SHEET_ID)
 
-# ✅ Store in session state
-if df_inventory is not None:
-    st.session_state.df_inventory = df_inventory
+# ✅ Handle case where data didn't load
+if df_inventory is None:
+    st.error("❌ Data not available. Please check your Google Sheet settings.")
+    st.stop()
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")

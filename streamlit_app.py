@@ -95,19 +95,19 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# 🎛 **Admin Panel for Adjustable Pricing Settings**
+# ✅ Admin Login Function (Fixes Double Click Issue)
+def admin_login():
+    if st.session_state.admin_password == ADMIN_PASSWORD:
+        st.session_state.admin_access = True
+
+# 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
     st.header("🔑 Admin Panel")
 
-    # **Ask for password only if not logged in**
     if not st.session_state.admin_access:
-        password_input = st.text_input("Enter Admin Password:", type="password")
-        if st.button("🔓 Login"):
-            if password_input == ADMIN_PASSWORD:
-                st.session_state.admin_access = True
-                st.success("✅ Admin Access Granted!")
-            else:
-                st.error("❌ Incorrect Password")
+        st.text_input("Enter Admin Password:", type="password", key="admin_password", on_change=admin_login)
+        if st.session_state.admin_access:
+            st.success("✅ Admin Access Granted!")
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
@@ -127,18 +127,16 @@ with st.sidebar:
         # ✅ Save settings when any value is changed
         save_settings()
 
-        # 🔓 **Logout Button**
+        # 🔓 **Logout Button** (No More Crash)
         if st.button("🔒 Logout"):
             st.session_state.admin_access = False
-            st.experimental_rerun()  # Refresh to hide settings
+            st.rerun()  # ✅ No crash, properly refreshes UI
 
-# 🎨 **Main UI (Optimized for Mobile)**
+# 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 st.markdown("### Select your slab and get an estimate!")
 
-# **Use Columns for Better Mobile Layout**
 col1, col2 = st.columns(2)
-
 with col1:
     square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
 
@@ -175,4 +173,10 @@ if st.button("📊 Estimate Cost"):
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
             with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"**Material:** ${material_cost:.2f}, **Fabrication:** ${fabrication_cost:.2f}, **Sale Price:** ${sale_price:.2f}")
+                st.markdown(f"""
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **Total Sale Price:** ${sale_price:.2f}  
+                """)

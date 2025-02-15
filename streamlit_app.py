@@ -54,7 +54,15 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# 🎨 **UI Setup**
+# 🎛 **Admin Panel (Always Available)**
+with st.sidebar:
+    st.header("⚙️ Adjustable Rates")
+    st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
+    st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+    st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
+    st.session_state.sale_margin = st.number_input("💰 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+
+# 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 st.markdown("### Select your slab and get an estimate!")
 

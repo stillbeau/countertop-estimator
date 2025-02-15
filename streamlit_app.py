@@ -47,6 +47,10 @@ if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
+if "selected_color" not in st.session_state:
+    st.session_state.selected_color = None  
+if "selected_thickness" not in st.session_state:
+    st.session_state.selected_thickness = "2 cm"  # Default thickness
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -110,20 +114,20 @@ with col1:
 
 with col2:
     thickness_options = ["1.2 cm", "2 cm", "3 cm"]
-    selected_thickness = st.selectbox("🔲 Thickness:", thickness_options)
+    st.session_state.selected_thickness = st.selectbox("🔲 Thickness:", thickness_options, index=thickness_options.index(st.session_state.selected_thickness))
 
-available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
+available_colors = df_inventory[df_inventory["Thickness"] == st.session_state.selected_thickness]["Color"].dropna().unique()
 if len(available_colors) > 0:
-    selected_color = st.selectbox("🎨 Color:", sorted(available_colors))
+    st.session_state.selected_color = st.selectbox("🎨 Color:", sorted(available_colors), index=list(available_colors).index(st.session_state.selected_color) if st.session_state.selected_color in available_colors else 0)
 else:
     st.warning("⚠️ No colors available for this thickness.")
-    selected_color = None
+    st.session_state.selected_color = None
 
 if st.button("📊 Estimate Cost"):
-    if selected_color is None:
+    if st.session_state.selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
-        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
+        selected_slab = df_inventory[(df_inventory["Color"] == st.session_state.selected_color) & (df_inventory["Thickness"] == st.session_state.selected_thickness)]
         total_available_sqft = selected_slab["Available Qty"].sum()
         required_sqft = square_feet * 1.2  
 
@@ -131,12 +135,12 @@ if st.button("📊 Estimate Cost"):
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
             # ✅ Suggest **Alternative Slabs** with enough quantity
-            alternatives = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Available Qty"] >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
+            alternatives = df_inventory[(df_inventory["Thickness"] == st.session_state.selected_thickness) & (df_inventory["Available Qty"] >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
 
             if not alternatives.empty:
                 st.warning("🔄 **Suggested Alternatives (Click to Select):**")
                 for _, row in alternatives.iterrows():
-                    if st.button(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)"):
+                    if st.button(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)", key=row['Color']):
                         st.session_state.selected_color = row['Color']
                         st.experimental_rerun()
             else:
@@ -151,9 +155,9 @@ if st.button("📊 Estimate Cost"):
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
             # ✅ Restore Google Search functionality
-            query = f"{selected_color} {selected_thickness} countertop"
+            query = f"{st.session_state.selected_color} {st.session_state.selected_thickness} countertop"
             google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+            st.markdown(f"🔍 [Click here to view {st.session_state.selected_color} images]({google_url})", unsafe_allow_html=True)
 
             with st.expander("🧐 Show Full Cost Breakdown"):
                 st.markdown(f"""

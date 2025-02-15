@@ -15,7 +15,7 @@ BASE_GOOGLE_SHEETS_URL = "https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=
 # ✅ Function to Load Inventory Data
 @st.cache_data
 def load_data(sheet_id):
-    """Load slab data from Google Sheets."""
+    """Load slab data from Google Sheets and clean column names."""
     try:
         file_url = BASE_GOOGLE_SHEETS_URL.format(sheet_id)
         df = pd.read_csv(file_url)
@@ -24,21 +24,35 @@ def load_data(sheet_id):
             st.error("⚠️ Data failed to load. Check if the sheet is public.")
             return None
 
-        # ✅ Debug: Show available columns
-        st.write("📊 **Loaded Columns:**", df.columns.tolist())
+        # ✅ Debug: Show raw column names
+        st.write("📊 **Raw Loaded Columns:**", df.columns.tolist())
 
-        # ✅ Clean column names
+        # ✅ Clean column names (remove spaces & hidden characters)
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
+
+        # ✅ Expected column mappings
+        column_mappings = {
+            "Product Variant": "Product",
+            "Available Qty": "Available Qty",
+            "Serialized On Hand Cost": "Serialized On Hand Cost",
+            "Serial Number": "Serial Number"
+        }
+
+        # ✅ Rename columns if they exist in the raw data
+        df.rename(columns=column_mappings, inplace=True)
+
+        # ✅ Show final column names for debugging
+        st.write("📊 **Final Cleaned Columns:**", df.columns.tolist())
 
         # ✅ Ensure required columns exist
         required_columns = ["Product", "Available Qty", "Serialized On Hand Cost", "Serial Number"]
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
-            st.error(f"⚠️ Missing required columns: {missing_columns}")
+            st.error(f"⚠️ Missing required columns after cleaning: {missing_columns}")
             return None
 
-        return df  # ✅ Return raw data for now (debugging)
+        return df  # ✅ Return cleaned data
 
     except Exception as e:
         st.error(f"❌ Error loading the file: {e}")

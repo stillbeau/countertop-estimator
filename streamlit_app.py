@@ -12,10 +12,24 @@ ADMIN_PASSWORD = "floform2024"
 # ✅ Load and clean the Excel file
 @st.cache_data
 def load_data():
-    """Load slab data from the Excel sheet."""
+    """Load slab data from the Excel sheet with error handling."""
     response = requests.get(file_url, timeout=10)
+    
+    if response.status_code != 200:
+        st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
+        return None
+    
     xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
     df = pd.read_excel(xls, sheet_name='Sheet1')
+
+    # ✅ Clean column names (remove hidden spaces & non-printable characters)
+    df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
+
+    # ✅ Debug: Print available columns if key error occurs
+    if "Product Variant" not in df.columns:
+        st.error("❌ 'Product Variant' column is missing. Available columns:")
+        st.write(df.columns)
+        return None
 
     # ✅ Extract Material, Color, and Thickness from "Product Variant"
     df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
@@ -28,14 +42,21 @@ def load_data():
     valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
     df = df[df['Thickness'].isin(valid_thicknesses)]
 
-    # ✅ Convert numeric columns
+    # ✅ Convert numeric columns safely
     numeric_cols = ['Available Qty', 'SQ FT PRICE']
     for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        else:
+            st.warning(f"⚠️ Column '{col}' not found in the Excel file.")
 
     return df
 
 df_inventory = load_data()
+
+# ✅ If the data failed to load, stop execution
+if df_inventory is None:
+    st.stop()
 
 # ✅ Initialize Admin Rates
 if "fab_cost" not in st.session_state:
@@ -48,37 +69,6 @@ if "sale_margin" not in st.session_state:
     st.session_state.sale_margin = 0.15  
 if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  
-
-# 🎨 **UI Styling**
-st.markdown(
-    """
-    <style>
-        .estimate-button {
-            display: flex;
-            justify-content: center;
-            width: 100%;
-            padding: 10px;
-        }
-        .styled-button {
-            background-color: #007AFF;
-            color: white;
-            font-size: 18px;
-            font-weight: 500;
-            padding: 12px;
-            border-radius: 12px;
-            text-align: center;
-            width: 100%;
-            display: inline-block;
-            cursor: pointer;
-            text-decoration: none;
-        }
-        .styled-button:hover {
-            background-color: #005EC2;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
@@ -148,8 +138,19 @@ if st.button("📊 Estimate Cost"):
 
             # ✅ View Images Button
             st.markdown(f"""
-            <div class="estimate-button">
-                <a href="{google_url}" target="_blank" class="styled-button">🔍 View Images</a>
+            <div style="text-align: center;">
+                <a href="{google_url}" target="_blank" style="
+                    display: inline-block;
+                    background-color: #007AFF;
+                    color: white;
+                    font-size: 18px;
+                    font-weight: 500;
+                    padding: 10px 20px;
+                    border-radius: 8px;
+                    text-decoration: none;
+                    margin-top: 10px;">
+                    🔍 View Images
+                </a>
             </div>
             """, unsafe_allow_html=True)
 

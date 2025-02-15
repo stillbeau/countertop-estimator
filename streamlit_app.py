@@ -5,11 +5,10 @@ import requests
 from io import BytesIO
 import json
 
-# ✅ Google Sheet IDs for each location
-SHEET_IDS = {
-    "Vernon": "17uClLZ2FpynR6Qck_Vq-OkLetvxGv_w0VLQFVct0GHQ",
-    "Abbotsford": "1KO_O43o5y8O5NF9X6hxYiQFxSJPAJm6-2gcOXgCRPMg"
-}
+# ✅ Google Sheets URLs
+VERNON_SHEET_ID = "17uClLZ2FpynR6Qck_Vq-OkLetvxGv_w0VLQFVct0GHQ"
+ABBOTSFORD_SHEET_ID = "1KO_O43o5y8O5NF9X6hxYiQFxSJPAJm6-2gcOXgCRPMg"
+BASE_URL = "https://docs.google.com/spreadsheets/d/{}/gviz/tq?tqx=out:csv"
 
 # 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
@@ -50,21 +49,21 @@ if "admin_access" not in st.session_state:
     st.session_state.admin_access = False
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()
-if "selected_location" not in st.session_state:
-    st.session_state.selected_location = None
 if "selected_color" not in st.session_state:
     st.session_state.selected_color = None
 if "selected_thickness" not in st.session_state:
-    st.session_state.selected_thickness = "3 cm"  # Default thickness to 3 cm
+    st.session_state.selected_thickness = "3 cm"
+if "selected_location" not in st.session_state:
+    st.session_state.selected_location = "Vernon"
 
-# ✅ Load and clean the Google Sheet
+# ✅ Load and clean the Google Sheets Data
+@st.cache_data
 def load_data(sheet_id):
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv"
+    """Load slab data from the Google Sheets."""
     try:
-        df = pd.read_csv(url)
-
-        # ✅ Clean column names
-        df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
+        url = BASE_URL.format(sheet_id)
+        df = pd.read_csv(url, dtype=str)  # Read all as string to prevent float conversion issues
+        df = df.applymap(lambda x: x.strip() if isinstance(x, str) else x)  # Remove extra spaces
 
         # ✅ Extract Material, Color, Thickness, and Serial Number
         df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
@@ -75,7 +74,7 @@ def load_data(sheet_id):
         valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
         df = df[df['Thickness'].isin(valid_thicknesses)]
 
-        # ✅ Convert numeric columns
+        # ✅ Convert numeric columns safely
         numeric_cols = ['Available Qty', 'SQ FT PRICE']
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
@@ -84,25 +83,21 @@ def load_data(sheet_id):
         df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
             "Available Qty": "sum",
             "SQ FT PRICE": "mean",
-            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))  # Combine Serial Numbers
+            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))
         })
 
         return df_grouped
-
     except Exception as e:
-        st.error(f"❌ Error loading data: {e}")
-        return None
+        st.error(f"❌ Error loading the file: {e}")
+        return pd.DataFrame()
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 
-# 📍 **Location Selection** (Lock after first choice)
-if st.session_state.selected_location is None:
-    st.session_state.selected_location = st.selectbox("📍 Select Location:", list(SHEET_IDS.keys()))
-    st.experimental_rerun()
+# ✅ Location Selection
+st.session_state.selected_location = st.selectbox("📍 Select Location:", ["Vernon", "Abbotsford"])
 
-df_inventory = load_data(SHEET_IDS[st.session_state.selected_location])
-st.session_state.df_inventory = df_inventory
+df_inventory = load_data(VERNON_SHEET_ID if st.session_state.selected_location == "Vernon" else ABBOTSFORD_SHEET_ID)
 
 square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
 selected_thickness = st.selectbox("🔲 Thickness:", ["1.2 cm", "2 cm", "3 cm"], index=2)
@@ -131,3 +126,21 @@ if st.button("📊 Estimate Cost"):
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+            # ✅ Restore Google Search functionality
+            query = f"{selected_color} {selected_thickness} countertop"
+            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+
+            # ✅ Display **Serial Numbers** in Breakdown
+            serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
+
+            with st.expander("🧐 Show Full Cost Breakdown"):
+                st.markdown(f"""
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **Total Sale Price:** ${sale_price:.2f}  
+                - **Slab Serial Number(s):** {serial_numbers}  
+                """)

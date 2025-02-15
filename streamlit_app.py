@@ -44,14 +44,18 @@ def load_data(sheet_id):
             st.error(f"⚠️ Missing required columns after cleaning: {missing_columns}")
             return None
 
+        # ✅ Convert necessary columns to strings, replacing NaN with "Unknown"
+        df["Product"] = df["Product"].astype(str).fillna("Unknown")
+        df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(0)
+        df["Serialized On Hand Cost"] = pd.to_numeric(df["Serialized On Hand Cost"], errors="coerce").fillna(0)
+
         # ✅ Extract Brand, Color, and Thickness
-        df["Brand"] = df["Product"].apply(lambda x: re.split(r"\(|\d", x.strip())[0].strip())  # Extract brand
+        df["Brand"] = df["Product"].apply(lambda x: re.split(r"\(|\d", x.strip())[0].strip() if isinstance(x, str) else "Unknown")  
         df["Thickness"] = df["Product"].str.extract(r"(\d+cm)").fillna("Unknown")  # Extract thickness
-        df["Color"] = df["Product"].apply(lambda x: re.findall(r"\) (.+?) \d+cm", x)[0] if re.findall(r"\) (.+?) \d+cm", x) else "Unknown")
+        df["Color"] = df["Product"].apply(lambda x: re.findall(r"\) (.+?) \d+cm", x)[0] if isinstance(x, str) and re.findall(r"\) (.+?) \d+cm", x) else "Unknown")
 
         # ✅ Calculate SQ FT PRICE (Handle missing values safely)
-        df["SQ FT PRICE"] = df["Serialized On Hand Cost"] / df["Available Qty"]
-        df["SQ FT PRICE"] = df["SQ FT PRICE"].fillna(0).round(2)  # Replace NaN with 0
+        df["SQ FT PRICE"] = (df["Serialized On Hand Cost"] / df["Available Qty"]).fillna(0).round(2)
 
         return df  # ✅ Return cleaned data
 

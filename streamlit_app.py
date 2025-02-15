@@ -149,4 +149,3 @@ if st.button("📊 Estimate Cost"):
             - **IB Cost per sq ft:** ${ib_sq_ft_price:.2f}  
             - **Total Sale Price:** ${sale_price:.2f}  
             """)
-

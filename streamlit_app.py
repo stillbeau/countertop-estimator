@@ -10,7 +10,7 @@ file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/mai
 ADMIN_PASSWORD = "floform2024"
 BREAKDOWN_PASSWORD = "floform"
 
-# ✅ Initialize session state variables
+# ✅ Initialize session state
 if "fab_cost" not in st.session_state:
     st.session_state.fab_cost = float(23)  
 if "install_cost" not in st.session_state:
@@ -66,12 +66,9 @@ else:
 with st.sidebar:
     st.header("🔑 Admin Panel")
     password_input = st.text_input("Enter Admin Password:", type="password")
-    if st.button("🔓 Login"):
-        if password_input == ADMIN_PASSWORD:
-            st.session_state.admin_access = True
-            st.success("✅ Admin Access Granted!")
-        else:
-            st.error("❌ Incorrect Password")
+    if password_input == ADMIN_PASSWORD:
+        st.session_state.admin_access = True
+        st.success("✅ Admin Access Granted!")
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
@@ -120,18 +117,10 @@ if st.button("📊 Estimate Cost"):
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
                 # 🔒 **Password-Protected Cost Breakdown**
-                if not st.session_state.breakdown_access:
-                    with st.expander("🔒 Unlock Cost Breakdown"):
-                        breakdown_password = st.text_input("🔑 Enter password:", type="password", key="breakdown_pass")
-
-                        # ✅ Unlock without UI refresh
-                        if "password_entered" not in st.session_state:
-                            st.session_state.password_entered = False
-
-                        if breakdown_password == BREAKDOWN_PASSWORD and not st.session_state.password_entered:
-                            st.session_state.breakdown_access = True
-                            st.session_state.password_entered = True
-                            st.experimental_rerun()  # ✅ Force UI to refresh
+                breakdown_password = st.text_input("🔑 Enter password for cost breakdown:", type="password", key="breakdown_pass")
+                
+                if breakdown_password == BREAKDOWN_PASSWORD:
+                    st.session_state.breakdown_access = True
 
                 # ✅ Show only if unlocked
                 if st.session_state.breakdown_access:

@@ -36,19 +36,19 @@ saved_settings = load_settings()
 
 # ✅ **Ensure Session State Variables Exist**
 if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = float(saved_settings["fab_cost"])  
+    st.session_state.fab_cost = float(saved_settings["fab_cost"])
 if "install_cost" not in st.session_state:
-    st.session_state.install_cost = float(saved_settings["install_cost"])  
+    st.session_state.install_cost = float(saved_settings["install_cost"])
 if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = float(saved_settings["ib_margin"])  
+    st.session_state.ib_margin = float(saved_settings["ib_margin"])
 if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = float(saved_settings["sale_margin"])  
+    st.session_state.sale_margin = float(saved_settings["sale_margin"])
 if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  
+    st.session_state.admin_access = False
 if "df_inventory" not in st.session_state:
-    st.session_state.df_inventory = pd.DataFrame()  
+    st.session_state.df_inventory = pd.DataFrame()
 if "selected_color" not in st.session_state:
-    st.session_state.selected_color = None  
+    st.session_state.selected_color = None
 if "selected_thickness" not in st.session_state:
     st.session_state.selected_thickness = "3 cm"  # ✅ Default thickness to 3 cm
 
@@ -80,7 +80,7 @@ def load_data():
         # ✅ Convert numeric columns
         numeric_cols = ['Available Qty', 'SQ FT PRICE']
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
 
         # ✅ Store serial numbers in a list for each Color + Thickness combination
         df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
@@ -104,40 +104,42 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
+# 🎛 **Admin Panel (Password Protected)**
+with st.sidebar:
+    st.header("🔑 Admin Panel")
+    if not st.session_state.admin_access:
+        password_input = st.text_input("Enter Admin Password:", type="password")
+        if st.button("🔓 Login"):
+            if password_input == ADMIN_PASSWORD:
+                st.session_state.admin_access = True
+                st.experimental_rerun()
+    
+    if st.session_state.admin_access:
+        st.subheader("⚙️ Adjustable Rates")
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+        save_settings()
+        if st.button("🔒 Logout"):
+            st.session_state.admin_access = False
+            st.experimental_rerun()
+
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
-st.markdown("### Select your slab and get an estimate!")
 
-col1, col2 = st.columns(2)
-with col1:
-    square_feet = st.number_input("👉 Enter Square Feet:", min_value=1, step=1)
-
-with col2:
-    thickness_options = ["1.2 cm", "2 cm", "3 cm"]
-    st.session_state.selected_thickness = st.selectbox("🛠 Select Thickness:", thickness_options, index=thickness_options.index(st.session_state.selected_thickness))
-
-available_colors = df_inventory[df_inventory["Thickness"] == st.session_state.selected_thickness]["Color"].dropna().unique()
-if len(available_colors) > 0:
-    st.session_state.selected_color = st.selectbox("🎨 Select a Color:", sorted(available_colors))
-else:
-    st.warning("⚠️ No colors available for this thickness.")
-    st.session_state.selected_color = None
+square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
+selected_thickness = st.selectbox("🔲 Thickness:", ["1.2 cm", "2 cm", "3 cm"], index=2)
+selected_color = st.selectbox("🎨 Color:", sorted(df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()))
 
 if st.button("📊 Estimate Cost"):
-    if st.session_state.selected_color is None:
-        st.error("❌ Please select a valid color.")
-    else:
-        selected_slab = df_inventory[(df_inventory["Color"] == st.session_state.selected_color) & (df_inventory["Thickness"] == st.session_state.selected_thickness)]
-        total_available_sqft = selected_slab["Available Qty"].sum()
-        required_sqft = square_feet * 1.2  
-
-        if required_sqft > total_available_sqft:
-            st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
-
-        material_cost = required_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
-        fabrication_cost = st.session_state.fab_cost * required_sqft
-        install_cost = st.session_state.install_cost * required_sqft
-        ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-        sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
-
-        st.success(f"💰 Estimated Sale Price: ${sale_price:.2f}")
+    selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
+    total_available_sqft = selected_slab["Available Qty"].sum()
+    required_sqft = square_feet * 1.2
+    material_cost = required_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
+    fabrication_cost = st.session_state.fab_cost * required_sqft
+    install_cost = st.session_state.install_cost * required_sqft
+    ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
+    sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
+    st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+    st.expander("🧐 Show Full Cost Breakdown").markdown(f"Material: ${material_cost:.2f}\nFabrication: ${fabrication_cost:.2f}\nInstallation: ${install_cost:.2f}\nTotal: ${sale_price:.2f}")

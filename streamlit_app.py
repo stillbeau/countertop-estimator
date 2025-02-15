@@ -50,7 +50,7 @@ if "df_inventory" not in st.session_state:
 if "selected_color" not in st.session_state:
     st.session_state.selected_color = None  
 if "selected_thickness" not in st.session_state:
-    st.session_state.selected_thickness = "2 cm"  # Default thickness
+    st.session_state.selected_thickness = "3 cm"  # ✅ Default thickness to 3 cm
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -134,15 +134,13 @@ if st.button("📊 Estimate Cost"):
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
-            # ✅ Suggest **Alternative Slabs** with enough quantity
+            # ✅ Suggest **Alternative Slabs** (No Clickable)
             alternatives = df_inventory[(df_inventory["Thickness"] == st.session_state.selected_thickness) & (df_inventory["Available Qty"] >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
 
             if not alternatives.empty:
-                st.warning("🔄 **Suggested Alternatives (Click to Select):**")
+                st.warning("🔄 **Suggested Alternatives:**")
                 for _, row in alternatives.iterrows():
-                    if st.button(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)", key=f"alt_{row['Color']}"):
-                        st.session_state.selected_color = row['Color']
-                        st.rerun()
+                    st.write(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)")
             else:
                 st.warning("⚠️ No suitable alternatives found.")
         else:

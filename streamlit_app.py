@@ -3,6 +3,7 @@ import pandas as pd
 import streamlit as st
 import requests
 import json
+import re
 from io import BytesIO
 
 # ✅ Google Sheets URLs for Vernon & Abbotsford Inventory
@@ -55,10 +56,35 @@ if "selected_color" not in st.session_state:
 if "selected_thickness" not in st.session_state:
     st.session_state.selected_thickness = "3 cm"  # Default thickness to 3 cm
 
-# ✅ Load and clean the Excel file
+# ✅ **Function to Extract Brand, Color, and Thickness**
+def extract_product_details(product_str):
+    try:
+        # Remove leading numbers and location codes (e.g., "17 - Caesarstone (ABB)")
+        product_str = re.sub(r"^\d+\s*-\s*", "", product_str)  # Remove "17 -"
+        product_str = re.sub(r"\(\w+\)", "", product_str).strip()  # Remove "(ABB)"
+
+        # Extract brand (first word)
+        brand = product_str.split(" ")[0].strip()
+
+        # Extract thickness (e.g., "2cm" or "3cm" at the end)
+        match = re.search(r"(\d+cm)$", product_str)
+        thickness = match.group(1) if match else None
+
+        # Extract color (everything between brand and thickness)
+        color = product_str.replace(brand, "").replace(thickness, "").strip() if thickness else product_str[len(brand):].strip()
+
+        # Format thickness correctly
+        if thickness:
+            thickness = thickness.replace("cm", " cm")
+
+        return brand, color, thickness
+    except Exception as e:
+        return "Unknown", "Unknown", "Unknown"
+
+# ✅ **Load and clean the Google Sheets data**
 @st.cache_data
 def load_data(sheet_id):
-    """Load slab data from the Google Sheet."""
+    """Load slab data from the Google Sheet and process it."""
     try:
         file_url = BASE_GOOGLE_SHEETS_URL.format(sheet_id)
         df = pd.read_csv(file_url)
@@ -67,26 +93,24 @@ def load_data(sheet_id):
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
         # ✅ Ensure necessary columns exist
-        required_columns = ["Product Variant", "Available Qty", "Serialized On Hand Cost", "Serial Number"]
+        required_columns = ["Product", "Available Qty", "Serialized On Hand Cost", "Serial Number"]
         missing_columns = [col for col in required_columns if col not in df.columns]
 
         if missing_columns:
             st.error(f"⚠️ Missing required columns: {missing_columns}")
             return None
 
-        # ✅ Calculate SQ FT PRICE
-        df["SQ FT PRICE"] = df["Serialized On Hand Cost"] / df["Available Qty"]
-        df["SQ FT PRICE"] = df["SQ FT PRICE"].fillna(0)  # Replace NaN with 0
-        df["SQ FT PRICE"] = df["SQ FT PRICE"].replace([float("inf"), -float("inf")], 0)  # Handle division errors
-
-        # ✅ Extract Material, Color, and Thickness from "Product Variant"
-        df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
-        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', 1, expand=True)
-        df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
+        # ✅ Extract Brand, Color, and Thickness
+        df[["Brand", "Color", "Thickness"]] = df["Product"].apply(lambda x: pd.Series(extract_product_details(str(x))))
 
         # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
         valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
         df = df[df['Thickness'].isin(valid_thicknesses)]
+
+        # ✅ Calculate SQ FT PRICE
+        df["SQ FT PRICE"] = df["Serialized On Hand Cost"] / df["Available Qty"]
+        df["SQ FT PRICE"] = df["SQ FT PRICE"].fillna(0)  # Replace NaN with 0
+        df["SQ FT PRICE"] = df["SQ FT PRICE"].replace([float("inf"), -float("inf")], 0)  # Handle division errors
 
         # ✅ Convert numeric columns
         numeric_cols = ['Available Qty', 'SQ FT PRICE']
@@ -141,30 +165,4 @@ if st.button("📊 Estimate Cost"):
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
         else:
-            # ✅ Calculate Costs Based on Square Footage
-            sq_ft_price = selected_slab.iloc[0]["SQ FT PRICE"]
-            material_cost = required_sqft * sq_ft_price
-            fabrication_cost = st.session_state.fab_cost * required_sqft
-            install_cost = st.session_state.install_cost * required_sqft
-            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
-
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
-
-            # ✅ Restore Google Search functionality
-            query = f"{selected_color} {selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
-
-            # ✅ Display **Serial Numbers** in Breakdown
-            serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
-
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                - **Slab Serial Number(s):** {serial_numbers}  
-                """)
+            st.success(f"✅ **You have enough material for this job!**")

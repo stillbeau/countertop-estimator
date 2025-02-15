@@ -180,6 +180,15 @@ if estimate_clicked:
 
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
+            with st.expander("🧐 Show Full Cost Breakdown"):
+                st.markdown(f"""
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **Total Sale Price:** ${sale_price:.2f}  
+                """)
+
 with col4:
     if st.session_state.show_google_button:
-        st.markdown(f'<a href="{st.session_state.google_search_url}" target="_blank"><button style="padding:10px 15px;background:#4CAF50;color:white;border:none;border-radius:5px;cursor:pointer;">🔍 View Images</button></a>', unsafe_allow_html=True)
+        st.button("🔍 View Images", help="Opens a Google image search", on_click=lambda: st.markdown(f'<a href="{st.session_state.google_search_url}" target="_blank">Click here</a>', unsafe_allow_html=True))

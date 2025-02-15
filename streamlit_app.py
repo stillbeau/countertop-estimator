@@ -35,17 +35,22 @@ def save_settings():
 saved_settings = load_settings()
 
 # ✅ **Ensure Session State Variables Exist**
-for key, value in {
-    "fab_cost": float(saved_settings["fab_cost"]),
-    "install_cost": float(saved_settings["install_cost"]),
-    "ib_margin": float(saved_settings["ib_margin"]),
-    "sale_margin": float(saved_settings["sale_margin"]),
-    "admin_access": False,
-    "selected_color": None,
-    "selected_thickness": "3 cm",  # ✅ Default thickness to 3 cm
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+if "fab_cost" not in st.session_state:
+    st.session_state.fab_cost = float(saved_settings["fab_cost"])  
+if "install_cost" not in st.session_state:
+    st.session_state.install_cost = float(saved_settings["install_cost"])  
+if "ib_margin" not in st.session_state:
+    st.session_state.ib_margin = float(saved_settings["ib_margin"])  
+if "sale_margin" not in st.session_state:
+    st.session_state.sale_margin = float(saved_settings["sale_margin"])  
+if "admin_access" not in st.session_state:
+    st.session_state.admin_access = False  
+if "df_inventory" not in st.session_state:
+    st.session_state.df_inventory = pd.DataFrame()  
+if "selected_color" not in st.session_state:
+    st.session_state.selected_color = None  
+if "selected_thickness" not in st.session_state:
+    st.session_state.selected_thickness = "3 cm"  # ✅ Default thickness to 3 cm
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -99,6 +104,40 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
+# 🎛 **Admin Panel (Password Protected)**
+with st.sidebar:
+    st.header("🔑 Admin Panel")
+
+    if not st.session_state.admin_access:
+        password_input = st.text_input("Enter Admin Password:", type="password", key="admin_password_input")
+        if st.button("🔓 Login"):
+            if password_input == ADMIN_PASSWORD:
+                st.session_state.admin_access = True
+                st.experimental_rerun()  # ✅ UI Refresh AFTER session update
+
+    if st.session_state.admin_access:
+        st.subheader("⚙️ Adjustable Rates")
+
+        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
+                                                    value=float(st.session_state.fab_cost), step=1.0)
+
+        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", 
+                                                     value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
+
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
+                                                        value=float(st.session_state.install_cost), step=1.0)
+
+        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
+                                                       value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
+
+        # ✅ Save settings when any value is changed
+        save_settings()
+
+        # 🔓 **Logout Button**
+        if st.button("🔒 Logout"):
+            st.session_state.admin_access = False
+            st.experimental_rerun()  # ✅ Properly refreshes UI
+
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
 st.markdown("### Select your slab and get an estimate!")
@@ -113,7 +152,7 @@ with col2:
 
 available_colors = df_inventory[df_inventory["Thickness"] == st.session_state.selected_thickness]["Color"].dropna().unique()
 if len(available_colors) > 0:
-    st.session_state.selected_color = st.selectbox("🎨 Color:", sorted(available_colors), index=list(available_colors).index(st.session_state.selected_color) if st.session_state.selected_color in available_colors else 0)
+    st.session_state.selected_color = st.selectbox("🎨 Color:", sorted(available_colors))
 else:
     st.warning("⚠️ No colors available for this thickness.")
     st.session_state.selected_color = None
@@ -126,10 +165,6 @@ if st.button("📊 Estimate Cost"):
         total_available_sqft = selected_slab["Available Qty"].sum()
         required_sqft = square_feet * 1.2  
 
-        if required_sqft > total_available_sqft:
-            st.error(f"🚨 **Not enough material available!** ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
-
-        # ✅ **Material Cost Calculation FIX**
         material_cost = required_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
         fabrication_cost = st.session_state.fab_cost * required_sqft
         install_cost = st.session_state.install_cost * required_sqft
@@ -138,37 +173,6 @@ if st.button("📊 Estimate Cost"):
 
         st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-        # ✅ Restore Google Search functionality
         query = f"{st.session_state.selected_color} {st.session_state.selected_thickness} countertop"
         google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-
-        # ✅ Centered Google Search Button
-        st.markdown(f"""
-        <div style="text-align: center;">
-            <a href="{google_url}" target="_blank" style="
-                display: inline-block;
-                background-color: #007AFF;
-                color: white;
-                font-size: 18px;
-                font-weight: 500;
-                padding: 10px 20px;
-                border-radius: 8px;
-                text-decoration: none;
-                margin-top: 10px;">
-                🔍 View Images
-            </a>
-        </div>
-        """, unsafe_allow_html=True)
-
-        # ✅ Display **Serial Numbers** in Breakdown
-        serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
-
-        with st.expander("🧐 Show Full Cost Breakdown"):
-            st.markdown(f"""
-            - **Material Cost:** ${material_cost:.2f}  
-            - **Fabrication Cost:** ${fabrication_cost:.2f}  
-            - **IB Cost:** ${ib_cost:.2f}  
-            - **Installation Cost:** ${install_cost:.2f}  
-            - **Total Sale Price:** ${sale_price:.2f}  
-            - **Slab Serial Number(s):** {serial_numbers}  
-            """)
+        st.markdown(f"🔍 [Click here to view {st.session_state.selected_color} images]({google_url})", unsafe_allow_html=True)

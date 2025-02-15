@@ -4,7 +4,6 @@ import requests
 from io import BytesIO
 import json
 import os
-import re
 
 # ✅ GitHub RAW File URL (Your Excel Data)
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
@@ -48,10 +47,6 @@ if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
-if "show_google_search" not in st.session_state:
-    st.session_state.show_google_search = False  
-if "google_search_url" not in st.session_state:
-    st.session_state.google_search_url = ""  
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -69,20 +64,23 @@ def load_data():
         # ✅ Clean column names (remove hidden spaces)
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
-        # ✅ Extract Brand, Location, and Color from "Product Variant"
+        # ✅ Ensure 'Product Variant' Column Exists
+        if "Product Variant" not in df.columns:
+            st.error("❌ 'Product Variant' column is missing in the Excel file.")
+            return None
+
+        # ✅ Extract Brand and Color from "Product Variant"
         df[['Brand', 'Rest']] = df['Product Variant'].str.split(' ', n=1, expand=True)
         df[['Color', 'Extra']] = df['Rest'].str.rsplit('(', n=1, expand=True)
-        
+        df["Color"] = df["Color"].str.strip()
+
         # ✅ Extract Finish (If provided)
         finishes = ["Brushed", "Polished", "Matte", "Satin"]
         df["Finish"] = df["Color"].apply(lambda x: next((f for f in finishes if f in x), "Polished"))
-        
-        # ✅ Clean extracted data
-        df["Color"] = df["Color"].str.strip()
         df["Finish"] = df["Finish"].str.strip()
 
         # ✅ Normalize Thickness Formatting
-        df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
+        df['Thickness'] = df['Thickness'].astype(str).str.replace("cm", " cm", regex=False).str.strip()
 
         # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
         valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
@@ -91,7 +89,10 @@ def load_data():
         # ✅ Convert numeric columns
         numeric_cols = ['Available Qty', 'SQ FT PRICE']
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
+            else:
+                st.error(f"❌ Missing column: {col}")
 
         # ✅ Store DataFrame in session state
         st.session_state.df_inventory = df
@@ -108,6 +109,12 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
+# ✅ Ensure Brand Column Exists
+if "Brand" in df_inventory.columns:
+    brand_options = sorted(df_inventory["Brand"].dropna().unique())
+else:
+    brand_options = []
+
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
     st.header("🔑 Admin Panel")
@@ -117,7 +124,7 @@ with st.sidebar:
         if st.button("🔓 Login"):
             if password_input == ADMIN_PASSWORD:
                 st.session_state.admin_access = True
-                st.experimental_rerun()  # ✅ UI Refresh AFTER session update
+                st.experimental_rerun()  
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
@@ -144,18 +151,28 @@ with st.sidebar:
 st.title("🛠 Countertop Cost Estimator")
 st.markdown("### Select your slab and get an estimate!")
 
-brand_options = df_inventory["Brand"].unique()
-selected_brand = st.selectbox("🏢 Brand:", sorted(brand_options))
+if brand_options:
+    selected_brand = st.selectbox("🏢 Brand:", brand_options)
 
-thickness_options = ["1.2 cm", "2 cm", "3 cm"]
-selected_thickness = st.selectbox("🔲 Thickness:", thickness_options)
+    thickness_options = ["1.2 cm", "2 cm", "3 cm"]
+    selected_thickness = st.selectbox("🔲 Thickness:", thickness_options)
 
-color_options = df_inventory[(df_inventory["Brand"] == selected_brand) & (df_inventory["Thickness"] == selected_thickness)]["Color"].unique()
-selected_color = st.selectbox("🎨 Color:", sorted(color_options))
+    color_options = df_inventory[
+        (df_inventory["Brand"] == selected_brand) & 
+        (df_inventory["Thickness"] == selected_thickness)
+    ]["Color"].dropna().unique()
+    
+    if len(color_options) > 0:
+        selected_color = st.selectbox("🎨 Color:", sorted(color_options))
+    else:
+        st.warning("⚠️ No colors available for this brand & thickness.")
+        selected_color = None
 
-finish_options = df_inventory[df_inventory["Color"] == selected_color]["Finish"].unique()
-selected_finish = st.selectbox("✨ Finish:", sorted(finish_options))
+    finish_options = df_inventory[df_inventory["Color"] == selected_color]["Finish"].unique()
+    selected_finish = st.selectbox("✨ Finish:", sorted(finish_options))
 
-query = f"{selected_brand} {selected_color} {selected_finish} countertop"
-google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+    query = f"{selected_brand} {selected_color} {selected_finish} countertop"
+    google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+    st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+else:
+    st.error("❌ No brands found in the dataset.")

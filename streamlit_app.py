@@ -152,29 +152,28 @@ if st.button("📊 Estimate Cost"):
     if selected_color is None:
         st.error("❌ Please select a valid color.")
     else:
-        selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
-        if selected_slab.empty:
-            st.error("❌ No slab found for the selected color and thickness.")
-        else:
-            selected_slab = selected_slab.iloc[0]
-            available_sqft = selected_slab["Available Qty"]
-            required_sqft = square_feet * 1.2  
+        matching_slabs = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
+        total_available_sqft = matching_slabs["Available Qty"].sum()
+        required_sqft = square_feet * 1.2  
 
-            if required_sqft > available_sqft:
-                st.error(f"🚨 Not enough material available! ({available_sqft} sq ft available, {required_sqft} sq ft needed)")
+        if required_sqft > total_available_sqft:
+            st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
-                # ✅ Suggest **Alternative Slabs** with enough quantity
-                alternatives = df_inventory[
-                    (df_inventory["Thickness"] == selected_thickness) &
-                    (df_inventory["Available Qty"] >= required_sqft)
-                ].sort_values(by="SQ FT PRICE").head(3)
+            # ✅ Suggest **Alternative Slabs** with enough quantity
+            alternatives = df_inventory[
+                (df_inventory["Thickness"] == selected_thickness) &
+                (df_inventory["Available Qty"] >= required_sqft)
+            ].sort_values(by="SQ FT PRICE").head(3)
 
-                if not alternatives.empty:
-                    st.warning("🔄 **Suggested Alternatives:**")
-                    for _, row in alternatives.iterrows():
-                        st.markdown(f"✅ **{row['Color']}** - {row['Available Qty']} sq ft available, ${row['SQ FT PRICE']}/sq ft")
-                else:
-                    st.warning("⚠️ No suitable alternatives found.")
-
+            if not alternatives.empty:
+                st.warning("🔄 **Suggested Alternatives:**")
+                for _, row in alternatives.iterrows():
+                    st.markdown(f"✅ **{row['Color']}** - {row['Available Qty']} sq ft available, ${row['SQ FT PRICE']}/sq ft")
             else:
-                st.success(f"💰 **Estimated Sale Price: ${required_sqft * selected_slab['SQ FT PRICE']:.2f}**")
+                st.warning("⚠️ No suitable alternatives found.")
+        else:
+            num_slabs_used = matching_slabs.shape[0]
+            if num_slabs_used > 1:
+                st.warning(f"⚠️ **This job will require {num_slabs_used} slabs to fabricate.**")
+
+            st.success(f"💰 **Estimated Sale Price: ${required_sqft * matching_slabs.iloc[0]['SQ FT PRICE']:.2f}**")

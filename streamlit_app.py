@@ -140,9 +140,9 @@ if st.button("📊 Estimate Cost"):
             if not alternatives.empty:
                 st.warning("🔄 **Suggested Alternatives (Click to Select):**")
                 for _, row in alternatives.iterrows():
-                    if st.button(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)", key=row['Color']):
+                    if st.button(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)", key=f"alt_{row['Color']}"):
                         st.session_state.selected_color = row['Color']
-                        st.experimental_rerun()
+                        st.rerun()
             else:
                 st.warning("⚠️ No suitable alternatives found.")
         else:

@@ -6,11 +6,11 @@ from io import BytesIO
 # ✅ GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# 🔑 Admin Passwords
+# 🔑 Admin & Cost Breakdown Passwords
 ADMIN_PASSWORD = "floform2024"
-BREAKDOWN_PASSWORD = "floform"  # 🔒 Password for cost breakdown
+BREAKDOWN_PASSWORD = "floform"
 
-# ✅ Initialize session state
+# ✅ Initialize session state variables
 if "fab_cost" not in st.session_state:
     st.session_state.fab_cost = float(23)  
 if "install_cost" not in st.session_state:
@@ -121,21 +121,23 @@ if st.button("📊 Estimate Cost"):
 
                 # 🔒 **Password-Protected Cost Breakdown**
                 if not st.session_state.breakdown_access:
-                    breakdown_password = st.text_input("🔒 Enter password for full breakdown:", type="password", key="breakdown_pass")
-                    unlock_pressed = st.button("🔓 Unlock Breakdown", key="unlock_button")
-                    if unlock_pressed:
-                        if breakdown_password == BREAKDOWN_PASSWORD:
-                            st.session_state.breakdown_access = True
-                            st.success("✅ Cost Breakdown Unlocked!")
-                        else:
-                            st.error("❌ Incorrect password!")
+                    with st.expander("🔒 Unlock Cost Breakdown"):
+                        breakdown_password = st.text_input("🔑 Enter password:", type="password", key="breakdown_pass")
+                        if st.button("🔓 Unlock Breakdown", key="unlock_button"):
+                            if breakdown_password == BREAKDOWN_PASSWORD:
+                                st.session_state.breakdown_access = True
+                                st.experimental_rerun()  # ✅ Refresh UI to show breakdown
+                            else:
+                                st.error("❌ Incorrect password!")
 
+                # ✅ Only show if unlocked
                 if st.session_state.breakdown_access:
-                    st.markdown(f"""
-                    **💰 Cost Breakdown**  
-                    - **Material Cost (from Excel):** ${material_cost:.2f}  
-                    - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                    - **IB Cost (Material + Fab + IB Margin):** ${ib_cost:.2f}  
-                    - **Installation Cost:** ${install_cost:.2f}  
-                    - **Total Sale Price (IB + Install + Sale Margin):** ${sale_price:.2f}  
-                    """)
+                    with st.expander("💰 Full Cost Breakdown"):
+                        st.markdown(f"""
+                        **💰 Cost Breakdown**  
+                        - **Material Cost (from Excel):** ${material_cost:.2f}  
+                        - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                        - **IB Cost (Material + Fab + IB Margin):** ${ib_cost:.2f}  
+                        - **Installation Cost:** ${install_cost:.2f}  
+                        - **Total Sale Price (IB + Install + Sale Margin):** ${sale_price:.2f}  
+                        """)

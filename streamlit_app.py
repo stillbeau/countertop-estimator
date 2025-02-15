@@ -2,13 +2,11 @@ import os
 import pandas as pd
 import streamlit as st
 import requests
-from io import BytesIO
 import json
-import re
 
-# ✅ Google Sheets URLs
-VERNON_SHEET_URL = "https://docs.google.com/spreadsheets/d/17uClLZ2FpynR6Qck_Vq-OkLetvxGv_w0VLQFVct0GHQ/export?format=xlsx"
-ABBOTSFORD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KO_O43o5y8O5NF9X6hxYiQFxSJPAJm6-2gcOXgCRPMg/export?format=xlsx"
+# ✅ Google Sheets CSV Export URLs
+VERNON_SHEET_URL = "https://docs.google.com/spreadsheets/d/17uClLZ2FpynR6Qck_Vq-OkLetvxGv_w0VLQFVct0GHQ/export?format=csv"
+ABBOTSFORD_SHEET_URL = "https://docs.google.com/spreadsheets/d/1KO_O43o5y8O5NF9X6hxYiQFxSJPAJm6-2gcOXgCRPMg/export?format=csv"
 
 # 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
@@ -49,60 +47,75 @@ if "admin_access" not in st.session_state:
     st.session_state.admin_access = False
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()
+if "selected_color" not in st.session_state:
+    st.session_state.selected_color = None
+if "selected_thickness" not in st.session_state:
+    st.session_state.selected_thickness = "3 cm"  # Default thickness to 3 cm
 if "selected_location" not in st.session_state:
     st.session_state.selected_location = "Vernon"
 
-# ✅ **Function to Extract Product Details**
-def extract_product_details(product_name):
-    if not isinstance(product_name, str):
-        return None, None, None, "Polished"  # Default to Polished if missing
-
-    product_name = re.sub(r"^\d+\s*-\s*", "", product_name)  # Remove leading numbers
-    brand = product_name.split()[0]  # Extract brand
-    product_name = re.sub(r"\(.*?\)", "", product_name).strip()  # Remove location codes
-    thickness_match = re.search(r"(\d+\.?\d*)\s*cm", product_name)
-    thickness = thickness_match.group(0) if thickness_match else None
-    color = product_name.replace(brand, "").replace(thickness if thickness else "", "").strip()
-    finishes = ["Matte", "Brushed", "Satin"]
-    finish = "Polished"
-    for f in finishes:
-        if f in color:
-            finish = f
-            color = color.replace(f, "").strip()
-    return brand, color, thickness, finish
-
-# ✅ **Function to Load and Process Google Sheet Data**
+# ✅ Load and clean the Excel file
 @st.cache_data
 def load_data(sheet_url):
+    """Load slab data from the Google Sheet."""
     try:
-        response = requests.get(sheet_url, timeout=10)
-        if response.status_code != 200:
-            st.error(f"⚠️ Error loading file: HTTP {response.status_code}")
-            return None
-        xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
-        df = pd.read_excel(xls, sheet_name="Sheet1")
+        df = pd.read_csv(sheet_url)
+
+        # ✅ Clean column names (remove hidden spaces)
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
-        df[['Brand', 'Color', 'Thickness', 'Finish']] = df['Product'].apply(lambda x: pd.Series(extract_product_details(x)))
-        df['SQ FT PRICE'] = df['Serialized On Hand Cost'] / df['Available Qty']
-        df = df.dropna(subset=['SQ FT PRICE'])  # Remove invalid rows
-        return df
+
+        # ✅ Extract Material, Color, Thickness
+        df[['Material', 'Location', 'Color_Thickness']] = df['Product'].str.extract(r'(\D+)\s\((\w+)\)\s(.+)')
+        df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', 1, expand=True)
+
+        # ✅ Normalize Thickness Formatting
+        df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
+
+        # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
+        valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
+        df = df[df['Thickness'].isin(valid_thicknesses)]
+
+        # ✅ Convert numeric columns
+        numeric_cols = ['Available Qty', 'Serialized On Hand Cost']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+        # ✅ Calculate SQ FT PRICE (On Hand Cost / Available Qty)
+        df["SQ FT PRICE"] = df["Serialized On Hand Cost"] / df["Available Qty"]
+        df["SQ FT PRICE"].fillna(0, inplace=True)
+
+        # ✅ Store serial numbers in a list for each Color + Thickness combination
+        df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
+            "Available Qty": "sum",
+            "SQ FT PRICE": "max",  # ✅ Take the highest price if there are multiple
+            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))  # ✅ Combine Serial Numbers
+        })
+
+        return df_grouped
+
     except Exception as e:
         st.error(f"❌ Error loading the file: {e}")
         return None
 
-# ✅ Load Data Based on Selected Location
-if st.session_state.selected_location == "Vernon":
-    df_inventory = load_data(VERNON_SHEET_URL)
-else:
-    df_inventory = load_data(ABBOTSFORD_SHEET_URL)
+# 🎛 **Select Location**
+st.sidebar.header("📍 Select Inventory Location")
+st.session_state.selected_location = st.sidebar.radio("Choose a Location:", ["Vernon", "Abbotsford"])
 
-st.session_state.df_inventory = df_inventory if df_inventory is not None else pd.DataFrame()
+# ✅ Load the selected location's data
+sheet_url = VERNON_SHEET_URL if st.session_state.selected_location == "Vernon" else ABBOTSFORD_SHEET_URL
+df_inventory = load_data(sheet_url)
+
+if df_inventory is not None:
+    st.session_state.df_inventory = df_inventory
 
 # 🎨 **Main UI**
 st.title("🛠 Countertop Cost Estimator")
-st.session_state.selected_location = st.radio("🌍 Select Location:", ["Vernon", "Abbotsford"])
+st.markdown(f"### Currently Viewing: **{st.session_state.selected_location} Inventory**")
+
 square_feet = st.number_input("📐 Square Feet:", min_value=1, step=1)
 selected_thickness = st.selectbox("🔲 Thickness:", ["1.2 cm", "2 cm", "3 cm"], index=2)
+
+# Ensure colors exist for the selected thickness
 available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
 selected_color = st.selectbox("🎨 Color:", sorted(available_colors) if len(available_colors) > 0 else [])
 
@@ -112,14 +125,35 @@ if st.button("📊 Estimate Cost"):
     else:
         selected_slab = df_inventory[(df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)]
         total_available_sqft = selected_slab["Available Qty"].sum()
-        required_sqft = square_feet * 1.2
+        required_sqft = square_feet * 1.2  # Including waste factor
+
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
         else:
+            # ✅ Calculate Costs Based on Square Footage
             sq_ft_price = selected_slab.iloc[0]["SQ FT PRICE"]
             material_cost = required_sqft * sq_ft_price
             fabrication_cost = st.session_state.fab_cost * required_sqft
             install_cost = st.session_state.install_cost * required_sqft
             ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
             sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
+
             st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+            # ✅ Restore Google Search functionality
+            query = f"{selected_color} {selected_thickness} countertop"
+            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+            st.markdown(f"🔍 [Click here to view {selected_color} images]({google_url})", unsafe_allow_html=True)
+
+            # ✅ Display **Serial Numbers** in Breakdown
+            serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
+
+            with st.expander("🧐 Show Full Cost Breakdown"):
+                st.markdown(f"""
+                - **Material Cost:** ${material_cost:.2f}  
+                - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                - **IB Cost:** ${ib_cost:.2f}  
+                - **Installation Cost:** ${install_cost:.2f}  
+                - **Total Sale Price:** ${sale_price:.2f}  
+                - **Slab Serial Number(s):** {serial_numbers}  
+                """)

@@ -9,15 +9,15 @@ file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/mai
 # 🔑 Admin Password
 ADMIN_PASSWORD = "floform2024"
 
-# ✅ Initialize session state for settings
-if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = 23  # ✅ Default fabrication cost per sq ft
-if "install_cost" not in st.session_state:
-    st.session_state.install_cost = 23  # Default install cost per sq ft
-if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = 0.15  # Default IB margin (15%)
-if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = 0.15  # Default Sale margin (15%)
+# ✅ Initialize session state with numeric values (forcing float type)
+if "fab_cost" not in st.session_state or not isinstance(st.session_state.fab_cost, (int, float)):
+    st.session_state.fab_cost = float(23)  # ✅ Default fabrication cost per sq ft
+if "install_cost" not in st.session_state or not isinstance(st.session_state.install_cost, (int, float)):
+    st.session_state.install_cost = float(23)  # Default install cost per sq ft
+if "ib_margin" not in st.session_state or not isinstance(st.session_state.ib_margin, (int, float)):
+    st.session_state.ib_margin = float(0.15)  # Default IB margin (15%)
+if "sale_margin" not in st.session_state or not isinstance(st.session_state.sale_margin, (int, float)):
+    st.session_state.sale_margin = float(0.15)  # Default Sale margin (15%)
 if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  # Admin access flag
 if "df_inventory" not in st.session_state:
@@ -53,7 +53,7 @@ def load_data():
         # ✅ Convert numeric columns
         numeric_cols = ['Available Qty', 'SQ FT PRICE']
         for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  # ✅ Replace NaN with 0
 
         # ✅ Store DataFrame in session state
         st.session_state.df_inventory = df
@@ -85,22 +85,19 @@ with st.sidebar:
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")
-        
-        # Editable fabrication cost (default at $23)
+
+        # ✅ Ensure only valid numbers are used
         st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
-                                                    value=st.session_state.fab_cost, step=1.0)
+                                                    value=float(st.session_state.fab_cost), step=1.0)
 
-        # Editable IB margin
         st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", 
-                                                     value=st.session_state.ib_margin, step=0.01, format="%.2f")
+                                                     value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
 
-        # Editable install cost
         st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
-                                                        value=st.session_state.install_cost, step=1.0)
+                                                        value=float(st.session_state.install_cost), step=1.0)
 
-        # Editable Sale margin
         st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", 
-                                                       value=st.session_state.sale_margin, step=0.01, format="%.2f")
+                                                       value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
 # 🎨 **UI Setup**
 st.title("🛠 Countertop Cost Estimator")
@@ -135,7 +132,7 @@ if st.button("📊 Estimate Cost"):
         else:
             selected_slab = selected_slab.iloc[0]
             available_sqft = selected_slab["Available Qty"]
-            sq_ft_price = selected_slab["SQ FT PRICE"]  # ✅ Pull material cost from Excel
+            sq_ft_price = float(selected_slab["SQ FT PRICE"])  # ✅ Ensure it's a valid number
             required_sqft = square_feet * 1.2  # **20% Waste Factor**
 
             if required_sqft > available_sqft:
@@ -143,11 +140,11 @@ if st.button("📊 Estimate Cost"):
             else:
                 # **Cost Calculations**
                 material_cost = sq_ft_price * required_sqft
-                fabrication_cost = st.session_state.fab_cost * required_sqft
-                install_cost = st.session_state.install_cost * required_sqft
+                fabrication_cost = float(st.session_state.fab_cost) * required_sqft
+                install_cost = float(st.session_state.install_cost) * required_sqft
 
-                ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-                sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
+                ib_cost = (material_cost + fabrication_cost) * (1 + float(st.session_state.ib_margin))
+                sale_price = (ib_cost + install_cost) * (1 + float(st.session_state.sale_margin))
 
                 # ✅ **Display Final Price**
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")

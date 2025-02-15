@@ -44,7 +44,7 @@ if "ib_margin" not in st.session_state:
 if "sale_margin" not in st.session_state:
     st.session_state.sale_margin = float(saved_settings["sale_margin"])  
 if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  # ✅ Ensures the admin panel doesn't disappear
+    st.session_state.admin_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
 if "show_google_search" not in st.session_state:
@@ -99,20 +99,16 @@ if st.session_state.df_inventory.empty:
 else:
     df_inventory = st.session_state.df_inventory
 
-# ✅ **Admin Login Function**
-def admin_login():
-    if st.session_state.admin_password == ADMIN_PASSWORD:
-        st.session_state.admin_access = True
-        st.experimental_rerun()  # ✅ Refresh the UI so the admin panel appears
-
 # 🎛 **Admin Panel (Password Protected)**
 with st.sidebar:
     st.header("🔑 Admin Panel")
 
     if not st.session_state.admin_access:
-        st.text_input("Enter Admin Password:", type="password", key="admin_password", on_change=admin_login)
-        if st.session_state.admin_access:
-            st.success("✅ Admin Access Granted!")
+        password_input = st.text_input("Enter Admin Password:", type="password")
+        if st.button("🔓 Login"):
+            if password_input == ADMIN_PASSWORD:
+                st.session_state.admin_access = True
+                st.experimental_rerun()  # ✅ UI Refresh AFTER session update
 
     if st.session_state.admin_access:
         st.subheader("⚙️ Adjustable Rates")

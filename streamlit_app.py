@@ -3,28 +3,28 @@ import streamlit as st
 import requests
 from io import BytesIO
 
-# ✅ Correct GitHub RAW File URL
+# ✅ GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# 🔑 Admin Password (Change this!)
+# 🔑 Admin Password (Change this if needed)
 ADMIN_PASSWORD = "floform2024"
 
 # ✅ Initialize session state for settings
-if "sq_ft_prices" not in st.session_state:
-    st.session_state.sq_ft_prices = {}  # Store slab prices per color
 if "install_cost" not in st.session_state:
     st.session_state.install_cost = 23  # Default install cost
 if "fabrication_cost" not in st.session_state:
     st.session_state.fabrication_cost = 23  # Default fab cost
+if "margin" not in st.session_state:
+    st.session_state.margin = 1.2  # Default margin multiplier
 if "admin_access" not in st.session_state:
     st.session_state.admin_access = False  # Admin access flag
-if "available_colors" not in st.session_state:
-    st.session_state.available_colors = []  # Store colors from Excel
+if "df_inventory" not in st.session_state:
+    st.session_state.df_inventory = pd.DataFrame()  # Empty DataFrame until loaded
 
 # ✅ Load and clean the Excel file
 @st.cache_data
 def load_data():
-    """Load and clean the Excel file from GitHub."""
+    """Load slab data from the Excel sheet."""
     try:
         response = requests.get(file_url, timeout=10)
         if response.status_code != 200:
@@ -48,24 +48,27 @@ def load_data():
         valid_thicknesses = ["1.2 cm", "2 cm", "3 cm"]
         df = df[df['Thickness'].isin(valid_thicknesses)]
 
-        # ✅ Store unique colors in session state
-        st.session_state.available_colors = sorted(df['Color'].dropna().unique())
+        # ✅ Convert numeric columns
+        numeric_cols = ['Available Qty', 'SQ FT PRICE']
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
 
-        # ✅ Load sq ft prices from Excel (if available)
-        for _, row in df.iterrows():
-            color = row["Color"]
-            if color not in st.session_state.sq_ft_prices:  # Only update if not manually set
-                st.session_state.sq_ft_prices[color] = row.get("SQ FT PRICE", 0)
+        # ✅ Store DataFrame in session state
+        st.session_state.df_inventory = df
 
-        return df[['Color', 'Thickness', 'Material', 'SQ FT PRICE']]
-    
+        return df
+
     except Exception as e:
-        st.error(f"❌ Error while loading the file: {e}")
+        st.error(f"❌ Error loading the file: {e}")
         return None
 
-df_inventory = load_data()
+# Load the data if not already loaded
+if st.session_state.df_inventory.empty:
+    df_inventory = load_data()
+else:
+    df_inventory = st.session_state.df_inventory
 
-# 🎨 **Admin Panel for Pricing Settings**
+# 🎨 **Admin Panel for Editable Pricing Settings**
 with st.sidebar:
     st.header("🔑 Admin Panel")
 
@@ -79,31 +82,23 @@ with st.sidebar:
             st.error("❌ Incorrect Password")
 
     if st.session_state.admin_access:
-        st.subheader("💰 Update Pricing")
+        st.subheader("⚙️ Adjustable Rates")
         
         # Editable install cost
-        st.session_state.install_cost = st.number_input("🚚 Install Cost per sq ft:", 
+        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", 
                                                         value=st.session_state.install_cost, step=1)
         
         # Editable fabrication cost
         st.session_state.fabrication_cost = st.number_input("🛠 Fabrication Cost per sq ft:", 
                                                              value=st.session_state.fabrication_cost, step=1)
 
-        # Editable slab pricing per color
-        if st.session_state.available_colors:
-            new_price_color = st.selectbox("🎨 Select Color to Update:", st.session_state.available_colors)
-            new_price_value = st.number_input("💰 New Sq Ft Price for Selected Color:", min_value=0.0, step=1.0)
-
-            if st.button("✅ Update Price"):
-                if new_price_color:
-                    st.session_state.sq_ft_prices[new_price_color] = new_price_value
-                    st.success(f"✅ Updated {new_price_color} → ${new_price_value:.2f}/sq ft")
-                else:
-                    st.error("⚠️ Please select a color.")
+        # Editable margin multiplier
+        st.session_state.margin = st.number_input("📈 Margin Multiplier:", 
+                                                  value=st.session_state.margin, step=0.1)
 
 # 🎨 **UI Setup**
 st.title("🛠 Countertop Cost Estimator")
-st.markdown("### Select your requirements and get a cost estimate!")
+st.markdown("### Select your slab and get an estimate!")
 
 # 📏 **Square Feet Input**
 square_feet = st.number_input("📐 Enter Square Feet Needed:", min_value=1, step=1)
@@ -113,39 +108,57 @@ thickness_options = ["1.2 cm", "2 cm", "3 cm"]
 selected_thickness = st.selectbox("🔲 Select Thickness:", thickness_options)
 
 # 🎨 **Color Dropdown (Populated from Excel)**
-if st.session_state.available_colors:
-    selected_color = st.selectbox("🎨 Select Color:", st.session_state.available_colors)
+available_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].dropna().unique()
+if len(available_colors) > 0:
+    selected_color = st.selectbox("🎨 Select Color:", sorted(available_colors))
 else:
-    st.warning("⚠️ No colors available. Please check the Excel file.")
+    st.warning("⚠️ No colors available for this thickness.")
     selected_color = None
 
 # 📊 **Estimate Cost Button**
 if st.button("📊 Estimate Cost"):
-    if not selected_color or selected_color not in st.session_state.sq_ft_prices:
-        st.error("❌ No price set for this color. Update it in Admin Panel.")
+    if selected_color is None:
+        st.error("❌ Please select a valid color.")
     else:
-        # 🔢 **Dynamic Pricing Calculations**
-        sq_ft_price = st.session_state.sq_ft_prices[selected_color]  # Price per sq ft
-        required_sqft = square_feet * 1.2  # **20% Waste Factor**
-        fabrication_cost = st.session_state.fabrication_cost
-        install_cost = st.session_state.install_cost
+        # 🔢 **Get Slab Price from Excel**
+        selected_slab = df_inventory[
+            (df_inventory["Color"] == selected_color) & (df_inventory["Thickness"] == selected_thickness)
+        ]
 
-        ib_sq_ft_price = (sq_ft_price + fabrication_cost) * 1.2
-        sale_price = (ib_sq_ft_price + install_cost) * 1.2 * required_sqft
+        if selected_slab.empty:
+            st.error("❌ No slab found for the selected color and thickness.")
+        else:
+            selected_slab = selected_slab.iloc[0]  # Get first match
 
-        # ✅ **Display Final Price**
-        st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+            available_sqft = selected_slab["Available Qty"]
+            sq_ft_price = selected_slab["SQ FT PRICE"]  # From Excel
 
-        # 🧐 **Expander for Cost Breakdown**
-        with st.expander("🧐 Show Full Cost Breakdown"):
-            st.write(f"📌 **Material**: {selected_color} ({selected_thickness})")
-            st.write(f"🔲 **Required Sq Ft (20% waste included)**: {required_sqft:.2f} sq ft")
+            required_sqft = square_feet * 1.2  # **20% Waste Factor**
             
-            st.markdown(f"""
-            **💰 Cost Breakdown**  
-            - **Material Cost (per sq ft):** ${sq_ft_price:.2f}  
-            - **Fabrication Cost (per sq ft):** ${fabrication_cost:.2f}  
-            - **Installation Cost (per sq ft):** ${install_cost:.2f}  
-            - **IB Cost per sq ft:** ${ib_sq_ft_price:.2f}  
-            - **Total Sale Price:** ${sale_price:.2f}  
-            """)
+            if required_sqft > available_sqft:
+                st.error("❌ Not enough material available for this selection (including 20% waste).")
+            else:
+                # **Cost Calculations**
+                fabrication_cost = st.session_state.fabrication_cost
+                install_cost = st.session_state.install_cost
+                margin = st.session_state.margin
+
+                ib_sq_ft_price = (sq_ft_price + fabrication_cost) * margin
+                sale_price = (ib_sq_ft_price + install_cost) * margin * required_sqft
+
+                # ✅ **Display Final Price**
+                st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+
+                # 🧐 **Expander for Cost Breakdown**
+                with st.expander("🧐 Show Full Cost Breakdown"):
+                    st.write(f"📌 **Material**: {selected_color} ({selected_thickness})")
+                    st.write(f"🔲 **Required Sq Ft (20% waste included)**: {required_sqft:.2f} sq ft")
+                    
+                    st.markdown(f"""
+                    **💰 Cost Breakdown**  
+                    - **Material Cost (per sq ft):** ${sq_ft_price:.2f}  
+                    - **Fabrication Cost (per sq ft):** ${fabrication_cost:.2f}  
+                    - **Installation Cost (per sq ft):** ${install_cost:.2f}  
+                    - **IB Cost per sq ft:** ${ib_sq_ft_price:.2f}  
+                    - **Total Sale Price:** ${sale_price:.2f}  
+                    """)

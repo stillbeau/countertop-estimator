@@ -6,10 +6,6 @@ from io import BytesIO
 # ✅ GitHub RAW File URL
 file_url = "https://raw.githubusercontent.com/stillbeau/countertop-estimator/main/deadfeb.xlsx"
 
-# 🔑 Admin & Cost Breakdown Passwords
-ADMIN_PASSWORD = "floform2024"
-BREAKDOWN_PASSWORD = "floform"
-
 # ✅ Initialize session state
 if "fab_cost" not in st.session_state:
     st.session_state.fab_cost = float(23)  
@@ -19,10 +15,6 @@ if "ib_margin" not in st.session_state:
     st.session_state.ib_margin = float(0.15)  
 if "sale_margin" not in st.session_state:
     st.session_state.sale_margin = float(0.15)  
-if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  
-if "breakdown_access" not in st.session_state:
-    st.session_state.breakdown_access = False  
 if "df_inventory" not in st.session_state:
     st.session_state.df_inventory = pd.DataFrame()  
 
@@ -61,22 +53,6 @@ if st.session_state.df_inventory.empty:
     df_inventory = load_data()
 else:
     df_inventory = st.session_state.df_inventory
-
-# 🎨 **Admin Panel**
-with st.sidebar:
-    st.header("🔑 Admin Panel")
-    password_input = st.text_input("Enter Admin Password:", type="password")
-    if st.button("🔓 Login"):
-        if password_input == ADMIN_PASSWORD:
-            st.session_state.admin_access = True
-            st.success("✅ Admin Access Granted!")
-
-    if st.session_state.admin_access:
-        st.subheader("⚙️ Adjustable Rates")
-        st.session_state.fab_cost = st.number_input("🛠 Fabrication Cost per sq ft:", value=float(st.session_state.fab_cost), step=1.0)
-        st.session_state.ib_margin = st.number_input("📈 IB Margin (%)", value=float(st.session_state.ib_margin), step=0.01, format="%.2f")
-        st.session_state.install_cost = st.number_input("🚚 Install & Template Cost per sq ft:", value=float(st.session_state.install_cost), step=1.0)
-        st.session_state.sale_margin = st.number_input("📈 Sale Margin (%)", value=float(st.session_state.sale_margin), step=0.01, format="%.2f")
 
 # 🎨 **UI Setup**
 st.title("🛠 Countertop Cost Estimator")
@@ -117,22 +93,13 @@ if st.button("📊 Estimate Cost"):
 
                 st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-                # 🔒 **Password-Protected Cost Breakdown**
-                if not st.session_state.breakdown_access:
-                    password_attempt = st.text_input("🔑 Enter password for cost breakdown:", type="password", key="breakdown_pass")
-
-                    if password_attempt == BREAKDOWN_PASSWORD:
-                        st.session_state.breakdown_access = True
-                        st.experimental_rerun()  # ✅ Instantly refresh UI to show the breakdown
-
-                # ✅ Show only if unlocked
-                if st.session_state.breakdown_access:
-                    with st.expander("💰 Full Cost Breakdown", expanded=True):
-                        st.markdown(f"""
-                        **💰 Cost Breakdown**  
-                        - **Material Cost (from Excel):** ${material_cost:.2f}  
-                        - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                        - **IB Cost (Material + Fab + IB Margin):** ${ib_cost:.2f}  
-                        - **Installation Cost:** ${install_cost:.2f}  
-                        - **Total Sale Price (IB + Install + Sale Margin):** ${sale_price:.2f}  
-                        """)
+                # ✅ Expandable Cost Breakdown (No Password Needed)
+                with st.expander("💰 Full Cost Breakdown", expanded=False):
+                    st.markdown(f"""
+                    **💰 Cost Breakdown**  
+                    - **Material Cost (from Excel):** ${material_cost:.2f}  
+                    - **Fabrication Cost:** ${fabrication_cost:.2f}  
+                    - **IB Cost (Material + Fab + IB Margin):** ${ib_cost:.2f}  
+                    - **Installation Cost:** ${install_cost:.2f}  
+                    - **Total Sale Price (IB + Install + Sale Margin):** ${sale_price:.2f}  
+                    """)

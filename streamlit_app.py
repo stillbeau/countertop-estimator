@@ -68,11 +68,9 @@ def load_data():
         # ✅ Clean column names (remove hidden spaces)
         df.columns = df.columns.str.strip().str.replace("\xa0", "", regex=True)
 
-        # ✅ Extract Material, Color, and Thickness from "Product Variant"
+        # ✅ Extract Material, Color, Thickness, and Serial Number
         df[['Material', 'Color_Thickness']] = df['Product Variant'].str.split(' - ', n=1, expand=True)
         df[['Color', 'Thickness']] = df['Color_Thickness'].str.rsplit(' ', n=1, expand=True)
-
-        # ✅ Normalize Thickness Formatting
         df['Thickness'] = df['Thickness'].str.replace("cm", " cm", regex=False).str.strip()
 
         # ✅ Filter thickness to only valid options (1.2 cm, 2 cm, 3 cm)
@@ -84,10 +82,12 @@ def load_data():
         for col in numeric_cols:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)  
 
-        # ✅ Sum Available Qty per Color + Thickness
-        df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg(
-            {"Available Qty": "sum", "SQ FT PRICE": "mean"}
-        )
+        # ✅ Store serial numbers in a list for each Color + Thickness combination
+        df_grouped = df.groupby(["Color", "Thickness"], as_index=False).agg({
+            "Available Qty": "sum",
+            "SQ FT PRICE": "mean",
+            "Serial Number": lambda x: ', '.join(map(str, x.dropna().unique()))  # ✅ Combine Serial Numbers
+        })
 
         # ✅ Store DataFrame in session state
         st.session_state.df_inventory = df_grouped
@@ -134,34 +134,28 @@ if st.button("📊 Estimate Cost"):
         if required_sqft > total_available_sqft:
             st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
-            # ✅ Suggest **Alternative Slabs** (No Clickable)
-            alternatives = df_inventory[(df_inventory["Thickness"] == st.session_state.selected_thickness) & (df_inventory["Available Qty"] >= required_sqft)].sort_values(by="SQ FT PRICE").head(3)
+        material_cost = total_available_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
+        fabrication_cost = st.session_state.fab_cost * required_sqft
+        install_cost = st.session_state.install_cost * required_sqft
+        ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
+        sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
 
-            if not alternatives.empty:
-                st.warning("🔄 **Suggested Alternatives:**")
-                for _, row in alternatives.iterrows():
-                    st.write(f"✅ {row['Color']} ({row['Available Qty']} sq ft, ${row['SQ FT PRICE']}/sq ft)")
-            else:
-                st.warning("⚠️ No suitable alternatives found.")
-        else:
-            material_cost = total_available_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
-            fabrication_cost = st.session_state.fab_cost * required_sqft
-            install_cost = st.session_state.install_cost * required_sqft
-            ib_cost = (material_cost + fabrication_cost) * (1 + st.session_state.ib_margin)
-            sale_price = (ib_cost + install_cost) * (1 + st.session_state.sale_margin)
+        st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
 
-            st.success(f"💰 **Estimated Sale Price: ${sale_price:.2f}**")
+        # ✅ Restore Google Search functionality
+        query = f"{st.session_state.selected_color} {st.session_state.selected_thickness} countertop"
+        google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+        st.markdown(f"🔍 [Click here to view {st.session_state.selected_color} images]({google_url})", unsafe_allow_html=True)
 
-            # ✅ Restore Google Search functionality
-            query = f"{st.session_state.selected_color} {st.session_state.selected_thickness} countertop"
-            google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-            st.markdown(f"🔍 [Click here to view {st.session_state.selected_color} images]({google_url})", unsafe_allow_html=True)
+        # ✅ Display **Serial Numbers** in Breakdown
+        serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"
 
-            with st.expander("🧐 Show Full Cost Breakdown"):
-                st.markdown(f"""
-                - **Material Cost:** ${material_cost:.2f}  
-                - **Fabrication Cost:** ${fabrication_cost:.2f}  
-                - **IB Cost:** ${ib_cost:.2f}  
-                - **Installation Cost:** ${install_cost:.2f}  
-                - **Total Sale Price:** ${sale_price:.2f}  
-                """)
+        with st.expander("🧐 Show Full Cost Breakdown"):
+            st.markdown(f"""
+            - **Material Cost:** ${material_cost:.2f}  
+            - **Fabrication Cost:** ${fabrication_cost:.2f}  
+            - **IB Cost:** ${ib_cost:.2f}  
+            - **Installation Cost:** ${install_cost:.2f}  
+            - **Total Sale Price:** ${sale_price:.2f}  
+            - **Slab Serial Number(s):** {serial_numbers}  
+            """)

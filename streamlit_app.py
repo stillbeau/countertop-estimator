@@ -35,22 +35,17 @@ def save_settings():
 saved_settings = load_settings()
 
 # ✅ **Ensure Session State Variables Exist**
-if "fab_cost" not in st.session_state:
-    st.session_state.fab_cost = float(saved_settings["fab_cost"])  
-if "install_cost" not in st.session_state:
-    st.session_state.install_cost = float(saved_settings["install_cost"])  
-if "ib_margin" not in st.session_state:
-    st.session_state.ib_margin = float(saved_settings["ib_margin"])  
-if "sale_margin" not in st.session_state:
-    st.session_state.sale_margin = float(saved_settings["sale_margin"])  
-if "admin_access" not in st.session_state:
-    st.session_state.admin_access = False  
-if "df_inventory" not in st.session_state:
-    st.session_state.df_inventory = pd.DataFrame()  
-if "selected_color" not in st.session_state:
-    st.session_state.selected_color = None  
-if "selected_thickness" not in st.session_state:
-    st.session_state.selected_thickness = "3 cm"  # ✅ Default thickness to 3 cm
+for key, value in {
+    "fab_cost": float(saved_settings["fab_cost"]),
+    "install_cost": float(saved_settings["install_cost"]),
+    "ib_margin": float(saved_settings["ib_margin"]),
+    "sale_margin": float(saved_settings["sale_margin"]),
+    "admin_access": False,
+    "selected_color": None,
+    "selected_thickness": "3 cm",  # ✅ Default thickness to 3 cm
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 # ✅ Load and clean the Excel file
 @st.cache_data
@@ -132,9 +127,9 @@ if st.button("📊 Estimate Cost"):
         required_sqft = square_feet * 1.2  
 
         if required_sqft > total_available_sqft:
-            st.error(f"🚨 Not enough material available! ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
+            st.error(f"🚨 **Not enough material available!** ({total_available_sqft} sq ft available, {required_sqft} sq ft needed)")
 
-        # ✅ **FIX: Calculate Material Cost Based on Square Foot Price**
+        # ✅ **Material Cost Calculation FIX**
         material_cost = required_sqft * selected_slab.iloc[0]["SQ FT PRICE"]
         fabrication_cost = st.session_state.fab_cost * required_sqft
         install_cost = st.session_state.install_cost * required_sqft
@@ -146,7 +141,24 @@ if st.button("📊 Estimate Cost"):
         # ✅ Restore Google Search functionality
         query = f"{st.session_state.selected_color} {st.session_state.selected_thickness} countertop"
         google_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-        st.markdown(f"🔍 [Click here to view {st.session_state.selected_color} images]({google_url})", unsafe_allow_html=True)
+
+        # ✅ Centered Google Search Button
+        st.markdown(f"""
+        <div style="text-align: center;">
+            <a href="{google_url}" target="_blank" style="
+                display: inline-block;
+                background-color: #007AFF;
+                color: white;
+                font-size: 18px;
+                font-weight: 500;
+                padding: 10px 20px;
+                border-radius: 8px;
+                text-decoration: none;
+                margin-top: 10px;">
+                🔍 View Images
+            </a>
+        </div>
+        """, unsafe_allow_html=True)
 
         # ✅ Display **Serial Numbers** in Breakdown
         serial_numbers = selected_slab["Serial Number"].iloc[0] if "Serial Number" in selected_slab.columns else "N/A"

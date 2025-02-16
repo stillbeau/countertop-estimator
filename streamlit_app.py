@@ -51,45 +51,48 @@ filtered_df = df_inventory[(df_inventory["Location"] == location) &
                            (df_inventory["Thickness"] == thickness)]
 
 if not filtered_df.empty:
-    slab_cost = filtered_df.iloc[0]["Serialized On Hand Cost"]
-    slab_sq_ft = filtered_df.iloc[0]["Available Qty"]
-    serial_number = filtered_df.iloc[0]["Serial Number"]
-    
-    # Apply Waste Factor for Availability Check
-    required_sq_ft_with_waste = req_sq_ft * WASTE_FACTOR
-    if required_sq_ft_with_waste > slab_sq_ft:
-        st.error("Not enough material available!")
-    else:
-        # Material Cost with 15% Markup
-        base_sq_ft_price = slab_cost / slab_sq_ft
-        material_cost = base_sq_ft_price * req_sq_ft * material_markup
+    try:
+        slab_cost = float(filtered_df.iloc[0]["Serialized On Hand Cost"])
+        slab_sq_ft = float(filtered_df.iloc[0]["Available Qty"])
+        serial_number = filtered_df.iloc[0]["Serial Number"]
         
-        # Fabrication & Install Costs
-        fab_total = fab_cost * req_sq_ft
-        install_total = install_cost * req_sq_ft
-        
-        # IB Cost (IB Markup Disabled)
-        ib_total = (material_cost + fab_total) * ib_markup
-        
-        # Final Sale Price
-        sale_price = (ib_total + install_total) * sale_markup
-        
-        # Display Results
-        st.success(f"Estimated Total Cost: ${sale_price:,.2f}")
-        
-        # Expandable Breakdown
-        with st.expander("Full Cost Breakdown"):
-            st.write(f"**Slab Cost:** ${slab_cost:,.2f}")
-            st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
-            st.write(f"**Serial Number:** {serial_number}")
-            st.write(f"**Price per Sq Ft:** ${base_sq_ft_price:,.2f}")
-            st.write(f"**Material Cost (15% Markup):** ${material_cost:,.2f}")
-            st.write(f"**Fabrication Cost:** ${fab_total:,.2f}")
-            st.write(f"**Install Cost:** ${install_total:,.2f}")
-            st.write(f"**Final Sale Price:** ${sale_price:,.2f}")
+        # Apply Waste Factor for Availability Check
+        required_sq_ft_with_waste = req_sq_ft * WASTE_FACTOR
+        if required_sq_ft_with_waste > slab_sq_ft:
+            st.error("Not enough material available!")
+        else:
+            # Material Cost with 15% Markup
+            base_sq_ft_price = slab_cost / slab_sq_ft
+            material_cost = base_sq_ft_price * req_sq_ft * material_markup
             
-        # Google Image Search Button
-        query = f"{color} countertop"
-        google_search_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
-        if st.button("Search Google Images"):
-            webbrowser.open(google_search_url)
+            # Fabrication & Install Costs
+            fab_total = fab_cost * req_sq_ft
+            install_total = install_cost * req_sq_ft
+            
+            # IB Cost (IB Markup Disabled)
+            ib_total = (material_cost + fab_total) * ib_markup
+            
+            # Final Sale Price
+            sale_price = (ib_total + install_total) * sale_markup
+            
+            # Display Results
+            st.success(f"Estimated Total Cost: ${sale_price:,.2f}")
+            
+            # Expandable Breakdown
+            with st.expander("Full Cost Breakdown"):
+                st.write(f"**Slab Cost:** ${slab_cost:,.2f}")
+                st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
+                st.write(f"**Serial Number:** {serial_number}")
+                st.write(f"**Price per Sq Ft:** ${base_sq_ft_price:,.2f}")
+                st.write(f"**Material Cost (15% Markup):** ${material_cost:,.2f}")
+                st.write(f"**Fabrication Cost:** ${fab_total:,.2f}")
+                st.write(f"**Install Cost:** ${install_total:,.2f}")
+                st.write(f"**Final Sale Price:** ${sale_price:,.2f}")
+                
+            # Google Image Search Button
+            query = f"{color} countertop"
+            google_search_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+            if st.button("Search Google Images"):
+                webbrowser.open(google_search_url)
+    except ValueError:
+        st.error("Error processing data. Please check the spreadsheet format.")

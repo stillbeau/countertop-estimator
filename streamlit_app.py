@@ -5,12 +5,12 @@ import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv  # Optional: for local testing
+from dotenv import load_dotenv  # Optional for local testing
 
-# Uncomment the following line if testing locally with a .env file
+# Uncomment the next line if you're testing locally with a .env file
 # load_dotenv()
 
-# --- Email Configuration via st.secrets ---
+# --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]
 SMTP_PORT = int(st.secrets["SMTP_PORT"])
 EMAIL_USER = st.secrets["EMAIL_USER"]
@@ -50,12 +50,14 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
+    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
     material_and_fab = material_cost_with_markup + fabrication_total
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
     total_cost = material_and_fab + install_cost  # before tax
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
@@ -67,7 +69,7 @@ def calculate_costs(slab, sq_ft_needed):
 
 def send_email(subject, body):
     msg = MIMEMultipart()
-    # Explicitly set the From header to your verified sender (using your Gmail address as per your choice)
+    # Explicitly set the From header to your verified sender
     msg["From"] = "Sc countertops <okquotesff@gmail.com>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
@@ -82,24 +84,6 @@ def send_email(subject, body):
     except Exception as e:
         st.error(f"Failed to send email: {e}")
         return False
-
-# --- Dummy Address Autocomplete Function ---
-def get_address_suggestions(query):
-    # This is a dummy function. Replace it with a call to an address autocomplete API.
-    if query:
-        # Return a list of dummy suggestions based on the query.
-        return [f"{query} Street, Springfield, 12345", f"{query} Avenue, Shelbyville, 54321"]
-    return []
-
-# --- Dummy Function to Extract City and Postal Code ---
-def extract_city_postal(address_str):
-    # Assume the address string format is "Address, City, Postal"
-    parts = address_str.split(',')
-    if len(parts) >= 3:
-        city = parts[1].strip()
-        postal = parts[2].strip()
-        return city, postal
-    return "", ""
 
 # --- UI: Title & Subtitle ---
 st.title("Countertop Cost Estimator")
@@ -171,30 +155,20 @@ with st.expander("View Full Cost Breakdown (password required)"):
         else:
             st.error("Incorrect password.")
 
-# --- Request a Quote Section as a Button that Expands the Form ---
-if st.button("Request a Quote"):
-    with st.expander("Enter Your Contact Information"):
-        # Address autocomplete simulation
-        address_input = st.text_input("Address")
-        suggestions = get_address_suggestions(address_input)
-        if suggestions:
-            selected_address = st.selectbox("Select your address", suggestions)
-            city_default, postal_default = extract_city_postal(selected_address)
-        else:
-            selected_address = address_input
-            city_default, postal_default = "", ""
-        
-        # Other fields with auto-filled city and postal code if available
+# --- Request a Quote Section as an Expander ---
+with st.expander("Request a Quote"):
+    st.write("Fill in your contact information below and we'll get in touch with you.")
+    with st.form("customer_form"):
         name = st.text_input("Name")
+        address = st.text_area("Address")
         email = st.text_input("Email")
         phone = st.text_input("Phone Number")
-        city = st.text_input("City", value=city_default)
-        postal_code = st.text_input("Postal Code", value=postal_default)
-        
-        # Submit button for the form
-        submit_request = st.button("Submit Request")
-        if submit_request:
-            breakdown_info = f"""
+        city = st.text_input("City")
+        postal_code = st.text_input("Postal Code")
+        submit_request = st.form_submit_button("Submit Request")
+    
+    if submit_request:
+        breakdown_info = f"""
 Countertop Cost Estimator Details:
 - Slab: {selected_full_name}
 - Edge Profile: {selected_edge_profile}
@@ -203,18 +177,18 @@ Countertop Cost Estimator Details:
 - GST (5%): ${gst_amount:,.2f}
 - Final Price: ${final_price:,.2f}
 """
-            customer_info = f"""
+        customer_info = f"""
 Customer Information:
 - Name: {name}
-- Address: {selected_address}
+- Address: {address}
 - Email: {email}
 - Phone: {phone}
 - City: {city}
 - Postal Code: {postal_code}
 """
-            email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
-            subject = f"New Countertop Request from {name}"
-            if send_email(subject, email_body):
-                st.success("Your request has been submitted successfully! We will contact you soon.")
-            else:
-                st.error("Failed to send email. Please try again later.")
+        email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
+        subject = f"New Countertop Request from {name}"
+        if send_email(subject, email_body):
+            st.success("Your request has been submitted successfully! We will contact you soon.")
+        else:
+            st.error("Failed to send email. Please try again later.")

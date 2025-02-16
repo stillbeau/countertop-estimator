@@ -53,8 +53,14 @@ def calculate_costs(slab, sq_ft_needed):
         "ib_cost": ib_total_cost
     }
 
-# Application title
-st.title("Countertop Cost Estimator")
+# Improved Title with Subtitle
+st.markdown(
+    """
+    <h1 style='text-align: center; color: #2C3E50;'>Countertop Cost Estimator</h1>
+    <p style='text-align: center; font-size: 18px; color: #34495E;'>Get an accurate estimate for your custom countertop project</p>
+    """,
+    unsafe_allow_html=True
+)
 
 # Load data
 with st.spinner("Loading data..."):
@@ -85,7 +91,7 @@ df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 # Select slab color
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-# --- Edge Profile Selector (placed right under the color selector) ---
+# --- Edge Profile Selector ---
 edge_profiles = ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"]
 selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles)
 st.markdown(
@@ -109,9 +115,16 @@ costs = calculate_costs(selected_slab, sq_ft_needed)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# Display estimated total cost
-st.subheader("💰 Estimated Total Cost")
-st.markdown(f"**${costs['total_cost']:,.2f}**")
+# Styled Estimated Total Cost display
+st.markdown(
+    f"""
+    <div style="background-color: #ecf0f1; padding: 20px; border-radius: 10px; text-align: center; margin-top: 20px;">
+        <h2 style="margin: 0; color: #2C3E50;">Estimated Total Cost</h2>
+        <h1 style="margin: 0; color: #27ae60;">${costs['total_cost']:,.2f}</h1>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
 
 # Password-protected cost breakdown using an expander
 with st.expander("View Full Cost Breakdown (password required)"):

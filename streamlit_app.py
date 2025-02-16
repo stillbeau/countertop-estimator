@@ -145,19 +145,19 @@ if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
 st.subheader("💰 Estimated Total Cost")
 st.markdown(f"**${costs['total_cost']:,.2f}**")
 
-# Password-protected cost breakdown section.
-show_breakdown = st.checkbox("🔍 Full Cost Breakdown (password protected)")
-if show_breakdown:
-    pwd = st.text_input("Enter password:", type="password")
-    if pwd == "sam":
-        st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
-        st.write(f"**Serial Number:** {costs['serial_number']}")
-        st.write(f"**Material & Fab:** ${costs['material_and_fab']:,.2f}")
-        st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
-        st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
-        st.write(f"**Total:** ${costs['total_cost']:,.2f}")
-    elif pwd:
-        st.error("Incorrect password.")
+# Password-protected cost breakdown using an expander
+with st.expander("View Full Cost Breakdown (password required)"):
+    pwd = st.text_input("Enter password to view breakdown:", type="password")
+    if pwd:
+        if pwd == "sam":
+            st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
+            st.write(f"**Serial Number:** {costs['serial_number']}")
+            st.write(f"**Material & Fab:** ${costs['material_and_fab']:,.2f}")
+            st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
+            st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
+            st.write(f"**Total:** ${costs['total_cost']:,.2f}")
+        else:
+            st.error("Incorrect password.")
 
 # Provide a Google Search link for the selected countertop style
 google_search_query = f"{selected_full_name} Countertop"

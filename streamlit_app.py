@@ -7,6 +7,7 @@ import io
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
 def load_data():
+    """Fetches and loads data from Google Sheets."""
     try:
         response = requests.get(GOOGLE_SHEET_URL)
         if response.status_code != 200:
@@ -14,8 +15,9 @@ def load_data():
             return None
 
         df = pd.read_csv(io.StringIO(response.text))
-        df.columns = df.columns.str.strip()
+        df.columns = df.columns.str.strip()  # Clean column names
 
+        # Ensure numerical values are converted properly
         df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
         df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
         df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
@@ -50,41 +52,35 @@ selected_slab = df_filtered[df_filtered["Full Name"] == selected_color].iloc[0]
 # Enter required square footage
 sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
 
-# Check availability
+# Extracting values for calculations
 available_sq_ft = selected_slab["Available Sq Ft"]
+serial_number = selected_slab["Serial Number"]
+slab_cost = selected_slab["Serialized On Hand Cost"] * 1.15  # 15% markup
+install_cost_per_sq_ft = 23
+fabrication_cost_per_sq_ft = 23
+ib_price_per_sq_ft = (slab_cost / available_sq_ft) + fabrication_cost_per_sq_ft
+
+# Ensure we have enough material
 red_flag = sq_ft_needed * 1.2 > available_sq_ft  # 20% waste buffer
 if red_flag:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# Cost calculations
-slab_cost = selected_slab["Serialized On Hand Cost"] * 1.15  # 15% markup
-price_per_sq_ft = slab_cost / available_sq_ft
-install_cost = 23
-fabrication_cost = 23
-total_cost = (price_per_sq_ft * sq_ft_needed) + ((install_cost + fabrication_cost) * sq_ft_needed)
+# Calculate total costs
+material_cost = (slab_cost / available_sq_ft) * sq_ft_needed
+install_cost = install_cost_per_sq_ft * sq_ft_needed
+total_cost = material_cost + install_cost
 
-# Show estimated total cost
+# Display estimated total cost
 st.subheader("💰 Estimated Total Cost")
-st.write(f"${total_cost:.2f}")
+st.markdown(f"**${total_cost:,.2f}**")
 
-# Show price breakdown
-if st.expander("🔍 Full Cost Breakdown"):
-    st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
+# Show full cost breakdown
+if st.checkbox("🔍 Full Cost Breakdown"):
+    st.write(f"**Slab Sq Ft:** {available_sq_ft:.2f} sq.ft")
     st.write(f"**Serial Number:** {serial_number}")
-    
-    # New Material Cost (Total)
-    material_total_cost = material_cost_per_sqft * sqft_required
-    st.write(f"**Material Cost (Total):** ${material_total_cost:,.2f}")
-    
-    # Installation Cost (Total)
-    total_install_cost = install_cost_per_sqft * sqft_required
-    st.write(f"**Installation Cost (Total):** ${total_install_cost:,.2f}")
-    
-    # IB Cost (Material + Fabrication)
-    st.write(f"**IB Cost (Material + Fabrication):** ${ib_cost_per_sqft:,.2f} per sq.ft")
-
-    # Total Cost for Requested Sq Ft
-    st.write(f"**Total Cost for {sqft_required} sq.ft:** ${total_price:,.2f}")
+    st.write(f"**Material Cost for {sq_ft_needed} sq.ft:** ${material_cost:,.2f}")
+    st.write(f"**Installation Cost for {sq_ft_needed} sq.ft:** ${install_cost:,.2f}")
+    st.write(f"**Total Cost for {sq_ft_needed} sq.ft:** **${total_cost:,.2f}**")
 
 # Google Search button
 google_search_query = f"{selected_color} Countertop"

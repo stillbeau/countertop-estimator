@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
 import requests
-import io  # ✅ Corrected import for handling CSV data
+import io
 
-# Google Sheets CSV Export URL
+# Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
-@st.cache_data
 def load_data():
     try:
         response = requests.get(GOOGLE_SHEET_URL)
@@ -14,92 +13,66 @@ def load_data():
             st.error("❌ Error loading the file. Check the Google Sheets URL.")
             return None
 
-        # ✅ Fixed: Using io.StringIO instead of pandas.compat.StringIO
         df = pd.read_csv(io.StringIO(response.text))
-
-        # ✅ Strip whitespace from column headers to prevent name mismatches
         df.columns = df.columns.str.strip()
 
-        # ✅ Convert Serialized On Hand Cost column (remove "$" and convert to float)
         df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
-
-        # ✅ Convert Available Sq Ft column to float
         df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
-
-        # ✅ Convert Serial Number to integer (handling NaN values safely)
         df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
 
         return df
-
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
         return None
 
+st.title("Countertop Cost Estimator")
 
-    except Exception as e:
-        st.error(f"❌ Failed to load data: {e}")
-        return None
-
-# Load inventory data
+# Load data
 df_inventory = load_data()
-
 if df_inventory is None:
     st.stop()
 
-# ✅ Debugging: Show dataframe and column types
-st.write("✅ Data Preview:")
-st.write(df_inventory.head())
+# Select location
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
+df_filtered = df_inventory[df_inventory["Location"] == location]
 
-st.write("✅ Column Data Types:")
-st.write(df_inventory.dtypes)
+# Select thickness
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=1)
+df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 
-# Sidebar for user selections
-st.sidebar.header("Select Options")
-location_selected = st.sidebar.selectbox("Select Location", df_inventory["Location"].unique())
-filtered_df = df_inventory[df_inventory["Location"] == location_selected]
+# Select color
+df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
+selected_color = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-# ✅ Ensure location filtering works
-if filtered_df.empty:
-    st.error(f"No materials found for {location_selected}")
-    st.stop()
+# Get selected slab
+selected_slab = df_filtered[df_filtered["Full Name"] == selected_color].iloc[0]
 
-# ✅ Select Thickness First
-thickness_selected = st.sidebar.selectbox("Select Thickness", filtered_df["Thickness"].unique())
+# Enter required square footage
+sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
 
-# ✅ Now filter available colors for that thickness
-filtered_df = filtered_df[filtered_df["Thickness"] == thickness_selected]
-color_selected = st.sidebar.selectbox("Select Color", filtered_df["Color"].unique())
+# Check availability
+available_sq_ft = selected_slab["Available Sq Ft"]
+red_flag = sq_ft_needed * 1.2 > available_sq_ft  # 20% waste buffer
+if red_flag:
+    st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# ✅ Find the selected slab
-selected_slab = filtered_df[filtered_df["Color"] == color_selected]
+# Cost calculations
+slab_cost = selected_slab["Serialized On Hand Cost"] * 1.15  # 15% markup
+price_per_sq_ft = slab_cost / available_sq_ft
+install_cost = 23
+fabrication_cost = 23
+total_cost = (price_per_sq_ft * sq_ft_needed) + ((install_cost + fabrication_cost) * sq_ft_needed)
 
-if selected_slab.empty:
-    st.error(f"No slabs available for {color_selected} at {location_selected}")
-    st.stop()
+# Show price breakdown
+if st.checkbox("Show Full Cost Breakdown"):
+    st.write(f"**Slab Cost:** ${slab_cost:.2f}")
+    st.write(f"**Slab Sq Ft:** {available_sq_ft:.2f} sq.ft")
+    st.write(f"**Serial Number:** {selected_slab['Serial Number']}")
+    st.write(f"**Price per Sq Ft:** ${price_per_sq_ft:.2f}")
+    st.write(f"**Install & Fabrication Cost:** ${install_cost + fabrication_cost:.2f} per sq.ft")
+    st.write(f"**Total Cost for {sq_ft_needed} sq.ft:** ${total_cost:.2f}")
 
-# Extract relevant values
-slab_cost = selected_slab["Serialized On Hand Cost"].values[0]
-slab_sq_ft = selected_slab["Available Sq Ft"].values[0]
-serial_number = selected_slab["Serial Number"].values[0]
-
-# ✅ Debugging: Ensure correct values before calculations
-st.write(f"🛠 Debug - Slab Cost: {slab_cost}, Slab Sq Ft: {slab_sq_ft}, Serial Number: {serial_number}")
-
-# ✅ Validate data before performing calculations
-if pd.isna(slab_cost) or pd.isna(slab_sq_ft) or slab_sq_ft == 0:
-    st.error("❌ Error: Invalid data for slab cost or slab square footage.")
-    st.stop()
-
-# User input for square footage
-sq_ft_needed = st.number_input("Enter required square footage:", min_value=1.0, step=0.5)
-
-# ✅ Calculate the total cost for user input square footage
-total_material_cost = (slab_cost / slab_sq_ft) * sq_ft_needed
-
-# ✅ Display pricing breakdown
-with st.expander("📋 Pricing Breakdown"):
-    st.write(f"🔹 **Slab Cost:** ${slab_cost:,.2f}")
-    st.write(f"🔹 **Available Sq Ft:** {slab_sq_ft} sq.ft")
-    st.write(f"🔹 **Serial Number:** {serial_number}")
-    st.write(f"🔹 **Price per Sq Ft:** ${slab_cost / slab_sq_ft:,.2f}")
-    st.write(f"🔹 **Total Cost for {sq_ft_needed} sq.ft:** ${total_material_cost:,.2f}")
+# Google Search button
+google_search_query = f"{selected_color} Countertop"
+search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
+st.markdown(f"[🔎 Search on Google]({search_url})")

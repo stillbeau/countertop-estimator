@@ -37,7 +37,7 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     """
-    Calculates the material and installation costs based on the slab details and required square footage.
+    Calculates the material, installation, and IB costs based on the slab details and required square footage.
     
     Args:
         slab (pd.Series): A row from the DataFrame containing slab information.
@@ -46,22 +46,35 @@ def calculate_costs(slab, sq_ft_needed):
     Returns:
         dict: A dictionary with the cost breakdown.
     """
-    # Apply a 15% markup on the serialized cost
-    slab_cost = slab["Serialized On Hand Cost"] * 1.15  
-    available_sq_ft = slab["Available Sq Ft"]
-    install_cost_per_sq_ft = 23
-    fabrication_cost_per_sq_ft = 23  # Currently unused but reserved for future enhancements
+    # Adjustable constants:
+    MARKUP_FACTOR = 1.15         # 15% markup
+    INSTALL_COST_PER_SQFT = 23   # $23 per sq.ft installation cost
+    FABRICATION_COST_PER_SQFT = 23  # $23 per sq.ft fabrication cost (for IB calculation)
 
+    available_sq_ft = slab["Available Sq Ft"]
+
+    # Material cost with markup (for total cost calculation)
+    slab_cost = slab["Serialized On Hand Cost"] * MARKUP_FACTOR
     material_cost = (slab_cost / available_sq_ft) * sq_ft_needed
-    install_cost = install_cost_per_sq_ft * sq_ft_needed
+
+    # Installation cost (based on a fixed rate)
+    install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
+
+    # Total cost = material (with markup) + installation
     total_cost = material_cost + install_cost
+
+    # IB Calculation: based on base material cost (before markup) plus fabrication cost
+    base_material_cost_per_sq_ft = slab["Serialized On Hand Cost"] / available_sq_ft
+    ib_cost_per_sq_ft = base_material_cost_per_sq_ft + FABRICATION_COST_PER_SQFT
+    ib_total_cost = ib_cost_per_sq_ft * sq_ft_needed
 
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_cost": material_cost,
         "install_cost": install_cost,
-        "total_cost": total_cost
+        "total_cost": total_cost,
+        "ib_cost": ib_total_cost
     }
 
 # Application title
@@ -126,8 +139,9 @@ st.markdown(f"**${costs['total_cost']:,.2f}**")
 if st.checkbox("🔍 Full Cost Breakdown"):
     st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
     st.write(f"**Serial Number:** {costs['serial_number']}")
-    st.write(f"**Material Cost for {sq_ft_needed} sq.ft:** ${costs['material_cost']:,.2f}")
+    st.write(f"**Material Cost (with markup) for {sq_ft_needed} sq.ft:** ${costs['material_cost']:,.2f}")
     st.write(f"**Installation Cost for {sq_ft_needed} sq.ft:** ${costs['install_cost']:,.2f}")
+    st.write(f"**IB Cost (Base Material + Fabrication) for {sq_ft_needed} sq.ft:** ${costs['ib_cost']:,.2f}")
     st.write(f"**Total Cost for {sq_ft_needed} sq.ft:** **${costs['total_cost']:,.2f}**")
 
 # Provide a Google Search link for the selected countertop style

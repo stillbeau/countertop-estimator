@@ -40,15 +40,17 @@ ib_markup = 1.0  # IB Markup disabled
 # User Inputs
 st.title("Countertop Cost Estimator")
 location = st.selectbox("Select Location", options=["ABB", "VER"])
-available_colors = df_inventory[df_inventory["Location"] == location]["Brand"].astype(str) + " - " + df_inventory[df_inventory["Location"] == location]["Color"].astype(str)
-color = st.selectbox("Select Brand & Color", options=available_colors.unique())
 thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"])
+
+# Filter available colors based on location and thickness
+available_colors = df_inventory[(df_inventory["Location"] == location) & (df_inventory["Thickness"] == thickness)]
+color_options = available_colors["Brand"].astype(str) + " - " + available_colors["Color"].astype(str)
+color = st.selectbox("Select Brand & Color", options=color_options.unique())
+
 req_sq_ft = st.number_input("Enter Required Sq Ft", min_value=1, value=20)
 
 # Filter Data Based on Selection
-filtered_df = df_inventory[(df_inventory["Location"] == location) &
-                           (df_inventory["Brand"] + " - " + df_inventory["Color"] == color) &
-                           (df_inventory["Thickness"] == thickness)]
+filtered_df = available_colors[available_colors["Brand"] + " - " + available_colors["Color"] == color]
 
 if not filtered_df.empty:
     try:

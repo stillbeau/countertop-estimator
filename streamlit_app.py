@@ -3,6 +3,13 @@ import pandas as pd
 import requests
 import io
 
+# === CONFIGURATION SECTION (Adjustable Rates & Markups) ===
+# Change these values as needed.
+MARKUP_FACTOR = 1.30            # 30% markup on material cost
+INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
+FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
+# ==========================================================
+
 # Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
@@ -19,17 +26,15 @@ def load_data():
         if response.status_code != 200:
             st.error("❌ Error loading the file. Check the Google Sheets URL.")
             return None
-
         df = pd.read_csv(io.StringIO(response.text))
         df.columns = df.columns.str.strip()  # Clean column names
-
+        
         # Convert columns to appropriate data types
         df["Serialized On Hand Cost"] = (
             df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
         )
         df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
         df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
-
         return df
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")
@@ -37,8 +42,11 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     """
-    Calculates the cost breakdown including material with fabrication,
-    installation, total cost, and IB cost.
+    Calculates the cost breakdown including:
+      - Material & Fab (material cost with markup plus fabrication cost)
+      - Installation
+      - Total cost (Material & Fab + Installation)
+      - IB (base material cost without markup plus fabrication)
     
     Args:
         slab (pd.Series): A row from the DataFrame containing slab information.
@@ -47,20 +55,15 @@ def calculate_costs(slab, sq_ft_needed):
     Returns:
         dict: A dictionary with the cost breakdown.
     """
-    # Adjustable constants:
-    MARKUP_FACTOR = 1.15         # 15% markup on material
-    INSTALL_COST_PER_SQFT = 23   # $23 per sq.ft installation cost
-    FABRICATION_COST_PER_SQFT = 23  # $23 per sq.ft fabrication cost
-
     available_sq_ft = slab["Available Sq Ft"]
-
+    
     # Material cost with markup (without fabrication)
     material_cost = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
 
     # Fabrication total cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
 
-    # Material & Fab line (material cost with markup + fabrication)
+    # Material & Fab: marked-up material cost plus fabrication cost
     material_and_fab = material_cost + fabrication_total
 
     # Installation cost

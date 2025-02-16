@@ -11,7 +11,7 @@ def load_data():
     """Load and clean the updated Excel file."""
     response = requests.get(file_url)
     if response.status_code != 200:
-        st.error("Error loading the file. Check the file URL.")
+        st.error("❌ Error loading the file. Check the file URL.")
         return None
 
     xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
@@ -23,6 +23,14 @@ def load_data():
     # Convert numerical fields
     df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors='coerce')
     df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace('[\$,]', '', regex=True).astype(float)
+
+    # 📌 Extracting Brand, Location, Color, and Thickness
+    df["Brand"] = df["Product Variant"].str.extract(r'- ([\w\s]+)\(')
+    df["Location"] = df["Product Variant"].str.extract(r'\((\w+)\)')
+    df["Thickness"] = df["Product Variant"].str.extract(r'(\d+\.?\d*cm)')
+    
+    # Extract Color correctly (keeping # if present)
+    df["Color"] = df["Product Variant"].str.extract(r'\) (.+) \d+\.?\d*cm')
 
     return df
 

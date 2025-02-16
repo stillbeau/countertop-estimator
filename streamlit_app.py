@@ -1,29 +1,29 @@
 import streamlit as st
 import pandas as pd
 import requests
+import io
 
-# Google Sheets URL (Ensure it's a published CSV link)
+# Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
-# Load Data
-@st.cache_data
 def load_data():
-    response = requests.get(GOOGLE_SHEET_URL)
-    if response.status_code != 200:
-        st.error("❌ Failed to load data: Check Google Sheets URL.")
+    try:
+        response = requests.get(GOOGLE_SHEET_URL)
+        if response.status_code != 200:
+            st.error("❌ Error loading the file. Check the Google Sheets URL.")
+            return None
+
+        df = pd.read_csv(io.StringIO(response.text))
+        df.columns = df.columns.str.strip()
+
+        df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
+        df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
+        df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
+
+        return df
+    except Exception as e:
+        st.error(f"❌ Failed to load data: {e}")
         return None
-    df = pd.read_csv(response.content.decode("utf-8"))
-    df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
-    df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace('[\$,]', '', regex=True).astype(float)
-    return df
-
-df_inventory = load_data()
-if df_inventory is None:
-    st.stop()
-
-# Sidebar for Location Selection
-location = st.sidebar.radio("Select Location:", df_inventory["Location"].unique())
-filtered_df = df_inventory[df_inventory["Location"] == location]
 
 # Main UI
 st.title("Countertop Cost Estimator")

@@ -60,15 +60,24 @@ if df_inventory is not None:
         st.subheader("💰 Estimated Total Cost")
         st.markdown(f"**${total_price:,.2f}**")
         
-        # Breakdown (Expandable Section)
-        with st.expander("🔍 Full Cost Breakdown"):
-            st.markdown(f"**Slab Cost:** ${slab_cost:,.2f}")
-            st.markdown(f"**Slab Sq Ft:** {slab_sq_ft:.2f} sq.ft")
-            st.markdown(f"**Serial Number:** {serial_number}")
-            st.markdown(f"**Price per Sq Ft (Material Only):** ${slab_price_per_sqft:.2f}")
-            st.markdown(f"**Installation Cost per Sq Ft:** ${install_cost_per_sqft:.2f}")
-            st.markdown(f"**Fabrication Cost per Sq Ft:** ${fabrication_cost_per_sqft:.2f}")
-            st.markdown(f"**Total Cost for {job_sq_ft} sq.ft:** ${total_price:,.2f}")
+       with st.expander("🔍 Full Cost Breakdown"):
+    st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
+    st.write(f"**Serial Number:** {serial_number}")
+    
+    # New Material Cost (Total)
+    material_total_cost = material_cost_per_sqft * sqft_required
+    st.write(f"**Material Cost (Total):** ${material_total_cost:,.2f}")
+    
+    # Installation Cost (Total)
+    total_install_cost = install_cost_per_sqft * sqft_required
+    st.write(f"**Installation Cost (Total):** ${total_install_cost:,.2f}")
+    
+    # IB Cost (Material + Fabrication)
+    st.write(f"**IB Cost (Material + Fabrication):** ${ib_cost_per_sqft:,.2f} per sq.ft")
+
+    # Total Cost for Requested Sq Ft
+    st.write(f"**Total Cost for {sqft_required} sq.ft:** ${total_price:,.2f}")
+
         
         # Google Search Button
         search_query = f"{selected_color} countertop"

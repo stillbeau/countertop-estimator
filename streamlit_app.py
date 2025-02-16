@@ -56,8 +56,10 @@ def calculate_costs(slab, sq_ft_needed):
 # Improved Title with Subtitle
 st.markdown(
     """
-    <h1 style='text-align: center; color: #2C3E50;'>Countertop Cost Estimator</h1>
-    <p style='text-align: center; font-size: 18px; color: #34495E;'>Get an accurate estimate for your custom countertop project</p>
+    <h1 style='text-align: center; color: #2C3E50; margin: 0;'>Countertop Cost Estimator</h1>
+    <p style='text-align: center; font-size: 18px; color: #34495E; margin-top: 5px;'>
+        Get an accurate estimate for your custom countertop project
+    </p>
     """,
     unsafe_allow_html=True
 )
@@ -115,19 +117,19 @@ costs = calculate_costs(selected_slab, sq_ft_needed)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# Styled Estimated Total Cost display with reduced spacing between elements
+# Styled Estimated Total Cost display with minimal spacing
 st.markdown(
     f"""
-    <div style="background-color: #ecf0f1; padding: 15px; border-radius: 10px; text-align: center; margin-top: 20px;">
-        <h2 style="margin: 0; color: #2C3E50; line-height: 1.2;">Estimated Total Cost</h2>
-        <h1 style="margin: 5px 0 0 0; color: #27ae60; line-height: 1.0;">${costs['total_cost']:,.2f}</h1>
+    <div style="background-color: #ecf0f1; padding: 10px; border-radius: 10px; text-align: center; margin-top: 15px;">
+        <h2 style="margin: 0 0 3px 0; color: #2C3E50; line-height: 1.0;">Estimated Total Cost</h2>
+        <h1 style="margin: 0; color: #27ae60; line-height: 1.0;">${costs['total_cost']:,.2f}</h1>
     </div>
     """,
     unsafe_allow_html=True
 )
 
-# Future Improvement: Add a "Request Contact" button below to collect customer information.
-# e.g., st.button("Request Contact")
+# (Optional) Future Improvement: Add a "Request Contact" button below to collect customer information.
+# st.button("Request Contact")
 
 # Password-protected cost breakdown using an expander
 with st.expander("View Full Cost Breakdown (password required)"):

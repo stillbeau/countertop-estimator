@@ -2,36 +2,10 @@ import streamlit as st
 import pandas as pd
 import requests
 from io import BytesIO
+import webbrowser
 
 # Corrected Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
-
-# Function to Load Data
-def load_data():
-    try:
-        response = requests.get(GOOGLE_SHEET_URL)
-        if response.status_code != 200:
-            st.error("❌ Error loading the file. Check the Google Sheets URL.")
-            return None
-        
-        df = pd.read_csv(BytesIO(response.content))
-        df.columns = df.columns.str.strip()  # Remove spaces in column names
-        return df
-    except Exception as e:
-        st.error(f"❌ Error: {e}")
-        return None
-
-# Load Inventory Data
-df_inventory = load_data()
-
-if df_inventory is None:
-    st.error("❌ Data failed to load. Please check the Google Sheets URL or format.")
-    st.stop()
-
-# Debugging Step: Show the first few rows of the loaded dataset
-st.write(df_inventory.head())
-
-
 
 # Adjustable Pricing (Controlled via Admin Panel)
 DEFAULT_FAB_COST = 23.0  # $ per sq.ft
@@ -49,6 +23,11 @@ def load_data():
     
     df = pd.read_csv(BytesIO(response.content))
     df.columns = df.columns.str.strip()
+    expected_columns = ["Product Variant", "Brand", "Location", "Color", "Thickness", "Available Sq Ft", "Serial Number", "Serialized On Hand Cost"]
+    if not all(col in df.columns for col in expected_columns):
+        st.error("Missing expected columns in the data. Please check the Google Sheet format.")
+        return None
+    
     return df
 
 df_inventory = load_data()

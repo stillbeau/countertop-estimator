@@ -5,13 +5,16 @@ import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv  # Optional for local testing
+
+# If you're testing locally with a .env file, uncomment the following lines:
+# load_dotenv()
 
 # --- Email Configuration using st.secrets ---
-# These values are loaded from your secrets file (without a header).
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]      # "srZ7GL6acMXVUwk4"
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
@@ -47,7 +50,7 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Calculate material cost with markup (without fabrication)
+    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
@@ -65,7 +68,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -176,6 +179,9 @@ Countertop Cost Estimator Details:
 - Slab: {selected_full_name}
 - Edge Profile: {selected_edge_profile}
 - Square Footage: {sq_ft_needed}
+- Material & Fab: ${costs['material_and_fab']:,.2f}
+- Installation: ${costs['install_cost']:,.2f}
+- IB: ${costs['ib_cost']:,.2f}
 - Subtotal (before tax): ${sub_total:,.2f}
 - GST (5%): ${gst_amount:,.2f}
 - Final Price: ${final_price:,.2f}

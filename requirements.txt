@@ -2,9 +2,3 @@ pandas
 openpyxl
 requests
 streamlit
-
-export EMAIL_USER="Okquotesff@gmail.com"
-export EMAIL_PASSWORD="Countertops2024"
-export SMTP_SERVER="smtp.gmail.com"
-export SMTP_PORT="587"
-export RECIPIENT_EMAIL="sambeaumont@me.com"

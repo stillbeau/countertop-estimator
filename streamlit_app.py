@@ -5,10 +5,6 @@ import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv  # Optional for local testing
-
-# If you're testing locally with a .env file, uncomment the following lines:
-# load_dotenv()
 
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
@@ -146,39 +142,28 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-with st.expander("View Full Cost Breakdown (password required)"):
-    pwd = st.text_input("Enter password to view breakdown:", type="password")
-    if pwd:
-        if pwd == "sam":
-            st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
-            st.write(f"**Serial Number:** {costs['serial_number']}")
-            st.write(f"**Material & Fab:** ${costs['material_and_fab']:,.2f}")
-            st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
-            st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
-            st.write(f"**Total (before tax):** ${sub_total:,.2f}")
-            st.write(f"**Edge Profile Selected:** {selected_edge_profile}")
-        else:
-            st.error("Incorrect password.")
-
 # --- Customer Contact Form ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
 
 with st.form("customer_form"):
     name = st.text_input("Name")
-    address = st.text_area("Address")
     email = st.text_input("Email")
     phone = st.text_input("Phone Number")
+    address = st.text_area("Address")
     city = st.text_input("City")
     postal_code = st.text_input("Postal Code")
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
+    # Build full breakdown details for the email (not shown in the UI)
     breakdown_info = f"""
 Countertop Cost Estimator Details:
 - Slab: {selected_full_name}
 - Edge Profile: {selected_edge_profile}
 - Square Footage: {sq_ft_needed}
+- Slab Sq Ft: {costs['available_sq_ft']:.2f} sq.ft
+- Serial Number: {costs['serial_number']}
 - Material & Fab: ${costs['material_and_fab']:,.2f}
 - Installation: ${costs['install_cost']:,.2f}
 - IB: ${costs['ib_cost']:,.2f}
@@ -189,9 +174,9 @@ Countertop Cost Estimator Details:
     customer_info = f"""
 Customer Information:
 - Name: {name}
-- Address: {address}
 - Email: {email}
 - Phone: {phone}
+- Address: {address}
 - City: {city}
 - Postal Code: {postal_code}
 """

@@ -117,10 +117,11 @@ costs = calculate_costs(selected_slab, sq_ft_needed)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# Styled Estimated Total Cost display with minimal spacing
+# Styled Estimated Total Cost display with extra bottom margin
 st.markdown(
     f"""
-    <div style="background-color: #ecf0f1; padding: 10px; border-radius: 10px; text-align: center; margin-top: 15px;">
+    <div style="background-color: #ecf0f1; padding: 10px; border-radius: 10px; 
+         text-align: center; margin-top: 15px; margin-bottom: 15px;">
         <h2 style="margin: 0 0 3px 0; color: #2C3E50; line-height: 1.0;">Estimated Total Cost</h2>
         <h1 style="margin: 0; color: #27ae60; line-height: 1.0;">${costs['total_cost']:,.2f}</h1>
     </div>

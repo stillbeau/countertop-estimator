@@ -4,7 +4,7 @@ import requests
 from io import BytesIO
 
 # 🔹 File URL from your updated Google Sheet or GitHub
-file_url = "YOUR_NEW_FILE_URL_HERE.xlsx"  # Replace with actual file URL
+file_url = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/edit?usp=sharing"  # Replace with actual file URL
 
 @st.cache_data
 def load_data():

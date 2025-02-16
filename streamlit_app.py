@@ -6,13 +6,13 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# === CONFIGURATION SECTION (Hard-Coded for Testing) ===
+# === CONFIGURATION SECTION ===
 MARKUP_FACTOR = 1.15            # 15% markup on material cost
 INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05                 # 5% GST
-# =======================================================
+# =============================
 
 # Google Sheets URL for cost data
 GOOGLE_SHEET_URL = (
@@ -40,7 +40,7 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Calculate material cost with markup (without fabrication)
+    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
@@ -62,13 +62,12 @@ def calculate_costs(slab, sq_ft_needed):
         "ib_cost": ib_total_cost
     }
 
-# --- Email Configuration (Hard-Coded) ---
-# Using Gmail SMTP_SSL on port 465
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 465
-EMAIL_USER = "Okquotesff@gmail.com"
-EMAIL_PASSWORD = "Countertops2024"
-RECIPIENT_EMAIL = "sambeaumont@me.com"
+# --- Email Configuration using st.secrets ---
+SMTP_SERVER = st.secrets["SMTP_SERVER"]
+SMTP_PORT = int(st.secrets["SMTP_PORT"])
+EMAIL_USER = st.secrets["EMAIL_USER"]
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
+RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 def send_email(subject, body):
     msg = MIMEMultipart()
@@ -77,7 +76,8 @@ def send_email(subject, body):
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     try:
-        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
         server.login(EMAIL_USER, EMAIL_PASSWORD)
         server.send_message(msg)
         server.quit()

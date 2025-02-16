@@ -7,13 +7,15 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv  # Optional for local testing
 
-# Uncomment the next line if you're testing locally with a .env file
+# Uncomment the next two lines if you're testing locally with a .env file
 # load_dotenv()
 
 # --- Email Configuration using st.secrets ---
+# These values should be set in your .streamlit/secrets.toml or Streamlit Cloud Secrets.
 SMTP_SERVER = st.secrets["SMTP_SERVER"]
 SMTP_PORT = int(st.secrets["SMTP_PORT"])
-EMAIL_USER = st.secrets["EMAIL_USER"]
+# For SMTP authentication, use the Brevo-provided login.
+EMAIL_USER = st.secrets["EMAIL_USER"]  # Should be "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -52,10 +54,15 @@ def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
     # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
+    # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
+    # Material & Fab total
     material_and_fab = material_cost_with_markup + fabrication_total
+    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    total_cost = material_and_fab + install_cost  # before tax
+    # Total (before tax)
+    total_cost = material_and_fab + install_cost
+    # IB Calculation: base material (without markup) + fabrication cost + any additional rate
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
 
     return {
@@ -63,14 +70,14 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
 def send_email(subject, body):
     msg = MIMEMultipart()
-    # Explicitly set the From header to your verified sender
-    msg["From"] = "Sc countertops <okquotesff@gmail.com>"
+    # Set the "From" header to your verified custom sender email.
+    msg["From"] = "Sc countertops <sam@sccountertops.ca>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
@@ -134,7 +141,7 @@ sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
 
-# --- Display Final Price ---
+# --- Display Final Price (Green Text) ---
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 
 with st.expander("View Subtotal & GST"):
@@ -155,20 +162,21 @@ with st.expander("View Full Cost Breakdown (password required)"):
         else:
             st.error("Incorrect password.")
 
-# --- Request a Quote Section as an Expander ---
-with st.expander("Request a Quote"):
-    st.write("Fill in your contact information below and we'll get in touch with you.")
-    with st.form("customer_form"):
-        name = st.text_input("Name")
-        address = st.text_area("Address")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone Number")
-        city = st.text_input("City")
-        postal_code = st.text_input("Postal Code")
-        submit_request = st.form_submit_button("Submit Request")
-    
-    if submit_request:
-        breakdown_info = f"""
+# --- Customer Contact Form ---
+st.markdown("## Request a Quote")
+st.write("Fill in your contact information below and we'll get in touch with you.")
+
+with st.form("customer_form"):
+    name = st.text_input("Name")
+    address = st.text_area("Address")
+    email = st.text_input("Email")
+    phone = st.text_input("Phone Number")
+    city = st.text_input("City")
+    postal_code = st.text_input("Postal Code")
+    submit_request = st.form_submit_button("Submit Request")
+
+if submit_request:
+    breakdown_info = f"""
 Countertop Cost Estimator Details:
 - Slab: {selected_full_name}
 - Edge Profile: {selected_edge_profile}
@@ -177,7 +185,7 @@ Countertop Cost Estimator Details:
 - GST (5%): ${gst_amount:,.2f}
 - Final Price: ${final_price:,.2f}
 """
-        customer_info = f"""
+    customer_info = f"""
 Customer Information:
 - Name: {name}
 - Address: {address}
@@ -186,9 +194,9 @@ Customer Information:
 - City: {city}
 - Postal Code: {postal_code}
 """
-        email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
-        subject = f"New Countertop Request from {name}"
-        if send_email(subject, email_body):
-            st.success("Your request has been submitted successfully! We will contact you soon.")
-        else:
-            st.error("Failed to send email. Please try again later.")
+    email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
+    subject = f"New Countertop Request from {name}"
+    if send_email(subject, email_body):
+        st.success("Your request has been submitted successfully! We will contact you soon.")
+    else:
+        st.error("Failed to send email. Please try again later.")

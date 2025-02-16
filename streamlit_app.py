@@ -2,18 +2,17 @@ import streamlit as st
 import pandas as pd
 import requests
 import io
-import os
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# === CONFIGURATION SECTION (Hidden in code) ===
+# === CONFIGURATION SECTION (Hard-Coded for Testing) ===
 MARKUP_FACTOR = 1.15            # 15% markup on material cost
 INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05                 # 5% GST
-# ==============================================
+# =======================================================
 
 # Google Sheets URL for cost data
 GOOGLE_SHEET_URL = (
@@ -63,14 +62,12 @@ def calculate_costs(slab, sq_ft_needed):
         "ib_cost": ib_total_cost
     }
 
-# --- Email Configuration ---
-# These values are ideally set as environment variables.
-SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-EMAIL_USER = os.environ.get("EMAIL_USER", "Okquotesff@gmail.com")
-EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD", "Countertops2024")
-# Recipient email set to a different address:
-RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
+# --- Email Configuration (Hard-Coded) ---
+SMTP_SERVER = "smtp.gmail.com"
+SMTP_PORT = 587
+EMAIL_USER = "Okquotesff@gmail.com"
+EMAIL_PASSWORD = "Countertops2024"
+RECIPIENT_EMAIL = "sambeaumont@me.com"
 
 def send_email(subject, body):
     msg = MIMEMultipart()

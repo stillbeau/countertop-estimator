@@ -52,8 +52,8 @@ filtered_df = df_inventory[(df_inventory["Location"] == location) &
 
 if not filtered_df.empty:
     try:
-        # Ensure numeric conversion
-        slab_cost = pd.to_numeric(filtered_df.iloc[0]["Serialized On Hand Cost"], errors='coerce')
+        # Ensure numeric conversion and clean currency values
+        slab_cost = pd.to_numeric(filtered_df.iloc[0]["Serialized On Hand Cost"].replace("$", ""), errors='coerce')
         slab_sq_ft = pd.to_numeric(filtered_df.iloc[0]["Available Qty"], errors='coerce')
         serial_number = filtered_df.iloc[0]["Serial Number"]
         

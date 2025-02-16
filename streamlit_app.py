@@ -3,8 +3,8 @@ import pandas as pd
 import requests
 from io import BytesIO
 
-# Google Sheets Raw CSV Export URL
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/edit"
+# Corrected Google Sheets URL
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
 # Adjustable Pricing (Controlled via Admin Panel)
 DEFAULT_FAB_COST = 23  # $ per sq.ft
@@ -81,7 +81,7 @@ if not filtered_df.empty:
             st.write(f"**Slab Cost:** ${slab_cost:,.2f}")
             st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
             st.write(f"**Serial Number:** {serial_number}")
-            st.write(f"**Price per Sq Ft:** ${base_sq_ft_price:,.2f}")
+            st.write(f"**Price per Sq Ft** ${base_sq_ft_price:,.2f}")
             st.write(f"**Material Cost (15% Markup):** ${material_cost:,.2f}")
             st.write(f"**Fabrication Cost:** ${fab_total:,.2f}")
             st.write(f"**Install Cost:** ${install_total:,.2f}")

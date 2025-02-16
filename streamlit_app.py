@@ -63,8 +63,9 @@ def calculate_costs(slab, sq_ft_needed):
     }
 
 # --- Email Configuration (Hard-Coded) ---
+# Using Gmail SMTP_SSL on port 465
 SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
+SMTP_PORT = 465
 EMAIL_USER = "Okquotesff@gmail.com"
 EMAIL_PASSWORD = "Countertops2024"
 RECIPIENT_EMAIL = "sambeaumont@me.com"
@@ -76,8 +77,7 @@ def send_email(subject, body):
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
+        server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT)
         server.login(EMAIL_USER, EMAIL_PASSWORD)
         server.send_message(msg)
         server.quit()

@@ -7,8 +7,8 @@ from io import BytesIO
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
 # Adjustable Pricing (Controlled via Admin Panel)
-DEFAULT_FAB_COST = 23  # $ per sq.ft
-DEFAULT_INSTALL_COST = 23  # $ per sq.ft
+DEFAULT_FAB_COST = 23.0  # $ per sq.ft
+DEFAULT_INSTALL_COST = 23.0  # $ per sq.ft
 DEFAULT_MATERIAL_MARKUP = 1.15  # 15%
 DEFAULT_SALE_MARKUP = 1.2  # 20%
 DEFAULT_IB_MARKUP = 1.0  # Disabled
@@ -30,10 +30,10 @@ if df_inventory is None:
 
 # Sidebar - Admin Panel
 st.sidebar.header("Admin Settings")
-fab_cost = st.sidebar.number_input("Fabrication Cost ($ per sq.ft)", min_value=0.0, value=DEFAULT_FAB_COST)
-install_cost = st.sidebar.number_input("Install Cost ($ per sq.ft)", min_value=0.0, value=DEFAULT_INSTALL_COST)
-material_markup = st.sidebar.number_input("Material Markup (%)", min_value=1.0, value=DEFAULT_MATERIAL_MARKUP)
-sale_markup = st.sidebar.number_input("Final Sale Markup (%)", min_value=1.0, value=DEFAULT_SALE_MARKUP)
+fab_cost = st.sidebar.number_input("Fabrication Cost ($ per sq.ft)", min_value=0.0, value=float(DEFAULT_FAB_COST))
+install_cost = st.sidebar.number_input("Install Cost ($ per sq.ft)", min_value=0.0, value=float(DEFAULT_INSTALL_COST))
+material_markup = st.sidebar.number_input("Material Markup (%)", min_value=1.0, value=float(DEFAULT_MATERIAL_MARKUP))
+sale_markup = st.sidebar.number_input("Final Sale Markup (%)", min_value=1.0, value=float(DEFAULT_SALE_MARKUP))
 ib_markup = 1.0  # IB Markup disabled
 
 # User Inputs
@@ -81,7 +81,7 @@ if not filtered_df.empty:
             st.write(f"**Slab Cost:** ${slab_cost:,.2f}")
             st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
             st.write(f"**Serial Number:** {serial_number}")
-            st.write(f"**Price per Sq Ft** ${base_sq_ft_price:,.2f}")
+            st.write(f"**Price per Sq Ft:** ${base_sq_ft_price:,.2f}")
             st.write(f"**Material Cost (15% Markup):** ${material_cost:,.2f}")
             st.write(f"**Fabrication Cost:** ${fab_total:,.2f}")
             st.write(f"**Install Cost:** ${install_total:,.2f}")

@@ -2,6 +2,10 @@ import streamlit as st
 import pandas as pd
 import requests
 import io
+import os
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # === CONFIGURATION SECTION (Hidden in code) ===
 MARKUP_FACTOR = 1.15            # 15% markup on material cost
@@ -36,12 +40,6 @@ def load_data():
         return None
 
 def calculate_costs(slab, sq_ft_needed):
-    """
-    Returns a dictionary with:
-      - total_cost:  material + fab + install (no tax)
-      - ib_cost:     base material + fab (for breakdown)
-      - other details (available_sq_ft, serial_number, etc.)
-    """
     available_sq_ft = slab["Available Sq Ft"]
 
     # Material cost (with markup), without fabrication
@@ -55,13 +53,13 @@ def calculate_costs(slab, sq_ft_needed):
     # Material & Fab
     material_and_fab = material_cost_with_markup + fabrication_total
 
-    # Installation
+    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
 
     # Total (before tax)
     total_cost = material_and_fab + install_cost
 
-    # IB Calculation: base material (no markup) + fab + optional IB rate
+    # IB Calculation: base material (without markup) + fabrication cost + optional IB rate
     ib_total_cost = (
         (slab["Serialized On Hand Cost"] / available_sq_ft)
         + FABRICATION_COST_PER_SQFT
@@ -77,7 +75,7 @@ def calculate_costs(slab, sq_ft_needed):
         "ib_cost": ib_total_cost,
     }
 
-# --- Title & Subtitle (Plain Markdown) ---
+# --- Title & Subtitle ---
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project")
 
@@ -89,7 +87,7 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# Location & Thickness filters
+# --- Filters for Slab Selection ---
 location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
@@ -102,53 +100,41 @@ if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
-# Color & Edge Profile
 df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
 edge_profiles = ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"]
 selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles)
-st.write(
-    "For more details on edge profiles, visit "
-    "[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)"
-)
+st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
-# Retrieve selected slab
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:
     st.error("Selected slab not found. Please choose a different option.")
     st.stop()
 selected_slab = selected_slab_df.iloc[0]
 
-# Square footage input
 sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
 
 # Calculate costs
 costs = calculate_costs(selected_slab, sq_ft_needed)
 
-# Check material availability (20% waste buffer)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# Calculate GST and Final Price
+# --- Calculate GST & Final Price ---
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
 
-# --- Show Final Price in Green at the Top ---
-# The ":green[]" syntax requires Streamlit 1.22 or newer.
+# --- Display Final Price ---
+# Using Streamlit's new color syntax (requires v1.22+); if not available, it will show plain text.
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 
-# --- Dropdown (Expander) for Subtotal & Tax ---
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# (Optional) Request Contact Button
-# st.button("Request Contact")
-
-# --- Password-protected Detailed Breakdown ---
 with st.expander("View Full Cost Breakdown (password required)"):
     pwd = st.text_input("Enter password to view breakdown:", type="password")
     if pwd:
@@ -162,3 +148,64 @@ with st.expander("View Full Cost Breakdown (password required)"):
             st.write(f"**Edge Profile Selected:** {selected_edge_profile}")
         else:
             st.error("Incorrect password.")
+
+# --- Customer Contact Form ---
+st.markdown("## Request a Quote")
+st.write("Fill in your contact information below and we'll get in touch with you.")
+
+with st.form("customer_form"):
+    name = st.text_input("Name")
+    address = st.text_area("Address")
+    email = st.text_input("Email")
+    phone = st.text_input("Phone Number")
+    city = st.text_input("City")
+    postal_code = st.text_input("Postal Code")
+    submit_request = st.form_submit_button("Submit Request")
+
+if submit_request:
+    # Compose the breakdown details
+    breakdown_info = f"""
+Countertop Cost Estimator Details:
+- Slab: {selected_full_name}
+- Edge Profile: {selected_edge_profile}
+- Square Footage: {sq_ft_needed}
+- Subtotal (before tax): ${sub_total:,.2f}
+- GST (5%): ${gst_amount:,.2f}
+- Final Price: ${final_price:,.2f}
+"""
+    customer_info = f"""
+Customer Information:
+- Name: {name}
+- Address: {address}
+- Email: {email}
+- Phone: {phone}
+- City: {city}
+- Postal Code: {postal_code}
+"""
+    email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
+    subject = f"New Countertop Request from {name}"
+    
+    # Email settings from environment variables (set these in your deployment environment)
+    SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+    SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+    EMAIL_USER = os.environ.get("EMAIL_USER")  # your email address
+    EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")  # your email password or app password
+    RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", EMAIL_USER)  # default to sender if not set
+
+    if EMAIL_USER is None or EMAIL_PASSWORD is None:
+        st.error("Email credentials are not set. Please set EMAIL_USER and EMAIL_PASSWORD environment variables.")
+    else:
+        try:
+            msg = MIMEMultipart()
+            msg["From"] = EMAIL_USER
+            msg["To"] = RECIPIENT_EMAIL
+            msg["Subject"] = subject
+            msg.attach(MIMEText(email_body, "plain"))
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
+            server.send_message(msg)
+            server.quit()
+            st.success("Your request has been submitted successfully! We will contact you soon.")
+        except Exception as e:
+            st.error(f"Failed to send email: {e}")

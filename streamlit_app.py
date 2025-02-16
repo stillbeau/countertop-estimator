@@ -19,6 +19,8 @@ GOOGLE_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 )
 
+st.write("Loaded secrets:", st.secrets)
+
 @st.cache_data
 def load_data():
     try:

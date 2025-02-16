@@ -7,6 +7,10 @@ import webbrowser
 # Corrected Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 
+st.write("📊 Debugging Data Preview:")
+st.write(df_inventory.head())  # Show first few rows of loaded data
+
+
 # Adjustable Pricing (Controlled via Admin Panel)
 DEFAULT_FAB_COST = 23.0  # $ per sq.ft
 DEFAULT_INSTALL_COST = 23.0  # $ per sq.ft

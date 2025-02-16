@@ -25,67 +25,56 @@ def load_data():
         st.error(f"❌ Failed to load data: {e}")
         return None
 
-# Main UI
 st.title("Countertop Cost Estimator")
 
-# Dropdown for Thickness
-thickness = st.selectbox("Select Thickness:", sorted(filtered_df["Thickness"].unique()))
-filtered_df = filtered_df[filtered_df["Thickness"] == thickness]
-
-# Dropdown for Color (Brand + Color Combined)
-filtered_df["Color Option"] = filtered_df["Brand"] + " - " + filtered_df["Color"]
-color = st.selectbox("Select Color:", sorted(filtered_df["Color Option"].unique()))
-
-# Get Selected Row Data
-selected_row = filtered_df[filtered_df["Color Option"] == color].iloc[0]
-serial_number = selected_row["Serial Number"]
-slab_cost = selected_row["Serialized On Hand Cost"]
-slab_sq_ft = selected_row["Available Sq Ft"]
-
-# Input for Square Footage
-sqft_required = st.number_input("Enter Square Footage Required:", min_value=1, step=1)
-
-# Ensure Material Availability
-sqft_required_with_waste = sqft_required * 1.2  # 20% Waste Factor
-if sqft_required_with_waste > slab_sq_ft:
-    st.error("⚠️ Not enough material available! Consider choosing another option.")
+# Load data
+df_inventory = load_data()
+if df_inventory is None:
     st.stop()
 
-# Pricing Constants
-INSTALL_COST_PER_SQFT = 23  # Fixed Install Price
-FAB_COST_PER_SQFT = 23  # Fixed Fabrication Price
-MATERIAL_MARKUP = 1.15  # 15% Material Markup
+# Select location
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
+df_filtered = df_inventory[df_inventory["Location"] == location]
 
-# Calculate Pricing
-material_cost_per_sqft = (slab_cost / slab_sq_ft) * MATERIAL_MARKUP
-ib_cost_per_sqft = (material_cost_per_sqft + FAB_COST_PER_SQFT)  # Material + Fabrication
-sale_price = (ib_cost_per_sqft + INSTALL_COST_PER_SQFT) * sqft_required  # Total Sale Price
+# Select thickness
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=1)
+df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 
-# Display Estimated Cost
+# Select color
+df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
+selected_color = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
+
+# Get selected slab
+selected_slab = df_filtered[df_filtered["Full Name"] == selected_color].iloc[0]
+
+# Enter required square footage
+sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
+
+# Check availability
+available_sq_ft = selected_slab["Available Sq Ft"]
+red_flag = sq_ft_needed * 1.2 > available_sq_ft  # 20% waste buffer
+if red_flag:
+    st.error("⚠️ Not enough material available! Consider selecting another slab.")
+
+# Cost calculations
+slab_cost = selected_slab["Serialized On Hand Cost"] * 1.15  # 15% markup
+price_per_sq_ft = slab_cost / available_sq_ft
+install_cost = 23
+fabrication_cost = 23
+total_cost = (price_per_sq_ft * sq_ft_needed) + ((install_cost + fabrication_cost) * sq_ft_needed)
+
+# Show estimated total cost
 st.subheader("💰 Estimated Total Cost")
-st.write(f"**${sale_price:,.2f}**")
+st.write(f"${total_cost:.2f}")
 
-# Expandable Cost Breakdown
-with st.expander("🔍 Full Cost Breakdown"):
-    st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
-    st.write(f"**Serial Number:** {serial_number}")
-    
-    # New Material Cost (Total)
-    material_total_cost = material_cost_per_sqft * sqft_required
-    st.write(f"**Material Cost (Total):** ${material_total_cost:,.2f}")
-    
-    # Installation Cost (Total)
-    total_install_cost = INSTALL_COST_PER_SQFT * sqft_required
-    st.write(f"**Installation Cost (Total):** ${total_install_cost:,.2f}")
-    
-    # IB Cost (Material + Fabrication)
-    ib_total_cost = ib_cost_per_sqft * sqft_required
-    st.write(f"**IB Cost (Total Material + Fabrication):** ${ib_total_cost:,.2f}")
-    
-    # Final Total Price
-    st.write(f"**Total Cost for {sqft_required} sq.ft:** ${sale_price:,.2f}")
+# Show price breakdown
+if st.checkbox("🔍 Show Full Cost Breakdown"):
+    st.write(f"**Slab Sq Ft:** {available_sq_ft:.2f} sq.ft")
+    st.write(f"**Serial Number:** {selected_slab['Serial Number']}")
+    st.write(f"**Install & Fabrication Cost:** ${install_cost + fabrication_cost:.2f} per sq.ft")
+    st.write(f"**Total Cost for {sq_ft_needed} sq.ft:** ${total_cost:.2f}")
 
-# Google Search Button
-search_query = f"{color} Countertop"
-search_url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
-st.markdown(f"[🔍 Search on Google]({search_url})", unsafe_allow_html=True)
+# Google Search button
+google_search_query = f"{selected_color} Countertop"
+search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
+st.markdown(f"[🔎 Search on Google]({search_url})")

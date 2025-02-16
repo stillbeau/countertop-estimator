@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import requests
 from io import BytesIO
+import webbrowser
 
 # Corrected Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
@@ -86,3 +87,9 @@ if not filtered_df.empty:
             st.write(f"**Fabrication Cost:** ${fab_total:,.2f}")
             st.write(f"**Install Cost:** ${install_total:,.2f}")
             st.write(f"**Final Sale Price:** ${sale_price:,.2f}")
+            
+        # Google Image Search Button
+        query = f"{color} countertop"
+        google_search_url = f"https://www.google.com/search?tbm=isch&q={query.replace(' ', '+')}"
+        if st.button("Search Google Images"):
+            webbrowser.open(google_search_url)

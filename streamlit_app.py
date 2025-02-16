@@ -5,32 +5,32 @@ import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv  # optional if you're loading from .env locally
+from dotenv import load_dotenv  # Optional for local .env testing
 
-# Load secrets (for local testing using .env, otherwise Streamlit Cloud uses st.secrets automatically)
-# Uncomment the next line if you use a local .env file:
+# Load environment variables from .env if testing locally
+# Uncomment the next two lines if needed:
 # load_dotenv()
+# (But on Streamlit Cloud, secrets will be loaded via st.secrets)
 
-# --- Ensure all required secrets are present ---
-required_keys = ["SMTP_SERVER", "SMTP_PORT", "EMAIL_USER", "EMAIL_PASSWORD", "RECIPIENT_EMAIL"]
-for key in required_keys:
-    if key not in st.secrets:
-        st.error(f"Missing required secret: {key}")
-        st.stop()
-
-# --- Email configuration from secrets ---
+# --- Email Configuration using st.secrets ---
+# Ensure your .streamlit/secrets.toml (or Streamlit Cloud secrets) is set without a header:
+# SMTP_SERVER = "smtp-relay.brevo.com"
+# SMTP_PORT = "587"
+# EMAIL_USER = "okquotesff@gmail.com"  <-- Use your verified Gmail address here
+# EMAIL_PASSWORD = "your_actual_brevo_api_key"
+# RECIPIENT_EMAIL = "sambeaumont@me.com"
 SMTP_SERVER = st.secrets["SMTP_SERVER"]
 SMTP_PORT = int(st.secrets["SMTP_PORT"])
-EMAIL_USER = st.secrets["EMAIL_USER"]
+EMAIL_USER = st.secrets["EMAIL_USER"]  # Should be "okquotesff@gmail.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-RECIPIENT_EMAIL = st.secrets["RECIPIENT_EMAIL"]
+RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
-MARKUP_FACTOR = 1.15            # 15% markup on material cost
-INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
-FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
-ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
-GST_RATE = 0.05                 # 5% GST
+MARKUP_FACTOR = 1.15            
+INSTALL_COST_PER_SQFT = 23      
+FABRICATION_COST_PER_SQFT = 23  
+ADDITIONAL_IB_RATE = 0          
+GST_RATE = 0.05                 
 
 # Google Sheets URL for cost data
 GOOGLE_SHEET_URL = (
@@ -58,12 +58,11 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
     material_and_fab = material_cost_with_markup + fabrication_total
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    total_cost = material_and_fab + install_cost  # before tax
+    total_cost = material_and_fab + install_cost
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
 
     return {
@@ -71,18 +70,18 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,
+        "total_cost": total_cost,  # before tax
         "ib_cost": ib_total_cost
     }
 
 def send_email(subject, body):
     msg = MIMEMultipart()
-    msg["From"] = EMAIL_USER
+    # Explicitly set the From header to your verified sender
+    msg["From"] = "Sc countertops <okquotesff@gmail.com>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     try:
-        # Connect to Brevo's SMTP server
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASSWORD)

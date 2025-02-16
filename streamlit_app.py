@@ -68,11 +68,23 @@ st.subheader("💰 Estimated Total Cost")
 st.write(f"${total_cost:.2f}")
 
 # Show price breakdown
-if st.checkbox("🔍 Show Full Cost Breakdown"):
-    st.write(f"**Slab Sq Ft:** {available_sq_ft:.2f} sq.ft")
-    st.write(f"**Serial Number:** {selected_slab['Serial Number']}")
-    st.write(f"**Install & Fabrication Cost:** ${install_cost + fabrication_cost:.2f} per sq.ft")
-    st.write(f"**Total Cost for {sq_ft_needed} sq.ft:** ${total_cost:.2f}")
+if st.expander("🔍 Full Cost Breakdown"):
+    st.write(f"**Slab Sq Ft:** {slab_sq_ft} sq.ft")
+    st.write(f"**Serial Number:** {serial_number}")
+    
+    # New Material Cost (Total)
+    material_total_cost = material_cost_per_sqft * sqft_required
+    st.write(f"**Material Cost (Total):** ${material_total_cost:,.2f}")
+    
+    # Installation Cost (Total)
+    total_install_cost = install_cost_per_sqft * sqft_required
+    st.write(f"**Installation Cost (Total):** ${total_install_cost:,.2f}")
+    
+    # IB Cost (Material + Fabrication)
+    st.write(f"**IB Cost (Material + Fabrication):** ${ib_cost_per_sqft:,.2f} per sq.ft")
+
+    # Total Cost for Requested Sq Ft
+    st.write(f"**Total Cost for {sqft_required} sq.ft:** ${total_price:,.2f}")
 
 # Google Search button
 google_search_query = f"{selected_color} Countertop"

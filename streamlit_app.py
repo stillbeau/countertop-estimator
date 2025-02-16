@@ -5,18 +5,13 @@ import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from dotenv import load_dotenv  # Optional for local testing
-
-# Uncomment the next two lines if you're testing locally with a .env file
-# load_dotenv()
 
 # --- Email Configuration using st.secrets ---
-# These values should be set in your .streamlit/secrets.toml or Streamlit Cloud Secrets.
-SMTP_SERVER = st.secrets["SMTP_SERVER"]
-SMTP_PORT = int(st.secrets["SMTP_PORT"])
-# For SMTP authentication, use the Brevo-provided login.
-EMAIL_USER = st.secrets["EMAIL_USER"]  # Should be "85e00d001@smtp-brevo.com"
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
+# These values are loaded from your secrets file (without a header).
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]      # "srZ7GL6acMXVUwk4"
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
@@ -52,7 +47,7 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Material cost with markup (without fabrication)
+    # Calculate material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
@@ -70,13 +65,13 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,     # before tax
+        "total_cost": total_cost,  # before tax
         "ib_cost": ib_total_cost
     }
 
 def send_email(subject, body):
     msg = MIMEMultipart()
-    # Set the "From" header to your verified custom sender email.
+    # Set the "From" header to your verified sender email.
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject

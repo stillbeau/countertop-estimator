@@ -4,7 +4,7 @@ import requests
 from io import BytesIO
 
 # Google Sheets Raw CSV Export URL
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRxxxxx/pub?output=csv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/edit"
 
 # Adjustable Pricing (Controlled via Admin Panel)
 DEFAULT_FAB_COST = 23  # $ per sq.ft

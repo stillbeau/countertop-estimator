@@ -36,34 +36,50 @@ def load_data():
         return None
 
 def calculate_costs(slab, sq_ft_needed):
+    """
+    Returns a dictionary with:
+      - total_cost: material + fab + install (no tax)
+      - ib_cost: base material + fab (for breakdown)
+      - other details (available_sq_ft, serial_number, etc.)
+    """
     available_sq_ft = slab["Available Sq Ft"]
-    # Material cost with markup (without fabrication)
-    material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
+
+    # Material cost (with 15% markup) without fabrication
+    material_cost_with_markup = (
+        slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft
+    ) * sq_ft_needed
+
+    # Fabrication total cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
+
+    # Material & Fab
     material_and_fab = material_cost_with_markup + fabrication_total
+
+    # Installation
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
+
+    # Total (before tax)
     total_cost = material_and_fab + install_cost
-    # IB Calculation: base material cost (without markup) plus fabrication cost and additional IB rate.
-    ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+
+    # IB Calculation (base material + fabrication + optional IB rate)
+    ib_total_cost = (
+        (slab["Serialized On Hand Cost"] / available_sq_ft)
+        + FABRICATION_COST_PER_SQFT
+        + ADDITIONAL_IB_RATE
+    ) * sq_ft_needed
+
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,
-        "ib_cost": ib_total_cost
+        "total_cost": total_cost,  # before tax
+        "ib_cost": ib_total_cost,
     }
 
-# Improved Title with Subtitle
-st.markdown(
-    """
-    <h1 style='text-align: center; color: #2C3E50; margin: 0;'>Countertop Cost Estimator</h1>
-    <p style='text-align: center; font-size: 18px; color: #34495E; margin-top: 5px;'>
-        Get an accurate estimate for your custom countertop project
-    </p>
-    """,
-    unsafe_allow_html=True
-)
+# --- TITLE & SUBTITLE (no HTML) ---
+st.title("Countertop Cost Estimator")
+st.write("Get an accurate estimate for your custom countertop project")
 
 # Load data
 with st.spinner("Loading data..."):
@@ -73,73 +89,69 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# Filter by location
+# Location & thickness filters
 location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-# Filter by thickness
 thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=1)
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
-# Create a display column for slab color selection
+# Color & edge profile
 df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
-
-# Select slab color
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-# --- Edge Profile Selector ---
 edge_profiles = ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"]
 selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles)
-st.markdown(
-    "For more details on edge profiles, please visit the [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/) page."
-)
+st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
-# Retrieve selected slab from the filtered DataFrame
+# Retrieve selected slab
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:
     st.error("Selected slab not found. Please choose a different option.")
     st.stop()
 selected_slab = selected_slab_df.iloc[0]
 
-# Input for required square footage
+# Square footage input
 sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
 
-# Calculate costs (before tax)
+# Calculate costs
 costs = calculate_costs(selected_slab, sq_ft_needed)
 
-# Check material availability (20% waste buffer)
+# Check material availability
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# Compute GST and final price
+# Calculate GST
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
 
-# Price Card with 5% GST breakdown
-price_card_html = f"""
-<div style="background-color: #ecf0f1; padding: 10px; border-radius: 10px; text-align: center; margin-top: 15px; margin-bottom: 15px;">
-    <h3 style="margin: 0 0 3px 0; color: #2C3E50; line-height: 1.0;">Total (before tax):</h3>
-    <p style="margin: 0; color: #27ae60; font-size: 1.3rem;">${sub_total:,.2f}</p>
-    <h3 style="margin: 10px 0 0 0; color: #2C3E50; line-height: 1.0;">GST (5%):</h3>
-    <p style="margin: 0; color: #27ae60; font-size: 1.3rem;">${gst_amount:,.2f}</p>
-    <h3 style="margin: 10px 0 0 0; color: #2C3E50; line-height: 1.0;">Total Price:</h3>
-    <h1 style="margin: 0; color: #27ae60; line-height: 1.0;">${final_price:,.2f}</h1>
-</div>
-"""
-st.markdown(price_card_html, unsafe_allow_html=True)
+# --- Display Price Breakdown (Markdown only) ---
+st.markdown("### Price Breakdown")
+st.markdown(
+    f"""
+**Total (before tax):**  
+${sub_total:,.2f}
 
-# (Optional) Future Improvement: Add a "Request Contact" button below to collect customer information.
+**GST (5%):**  
+${gst_amount:,.2f}
+
+**Total Price:**  
+## ${final_price:,.2f}
+"""
+)
+
+# (Optional) Add a "Request Contact" button here:
 # st.button("Request Contact")
 
-# Password-protected cost breakdown using an expander
+# Password-protected breakdown
 with st.expander("View Full Cost Breakdown (password required)"):
     pwd = st.text_input("Enter password to view breakdown:", type="password")
     if pwd:

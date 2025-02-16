@@ -1,86 +1,89 @@
 import streamlit as st
 import pandas as pd
 import requests
-from io import BytesIO
+from io import StringIO
 
-# 🔹 File URL from your updated Google Sheet or GitHub
-file_url = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/edit?usp=sharing"  # Replace with actual file URL
+# ✅ Updated Google Sheets direct CSV link
+file_url = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/gviz/tq?tqx=out:csv"
 
 @st.cache_data
 def load_data():
-    """Load and clean the updated Excel file."""
-    response = requests.get(file_url)
-    if response.status_code != 200:
-        st.error("❌ Error loading the file. Check the file URL.")
+    """Load and clean the Google Sheets data."""
+    try:
+        response = requests.get(file_url)
+        if response.status_code != 200:
+            st.error(f"❌ Error: Unable to fetch data. Status Code: {response.status_code}")
+            return None
+
+        # Read CSV data from Google Sheets
+        df = pd.read_csv(StringIO(response.text))
+
+        # Clean column names
+        df.columns = df.columns.str.strip()
+
+        # Convert numerical fields
+        df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors='coerce')
+        df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace('[\$,]', '', regex=True).astype(float)
+
+        # 📌 Extract Brand, Location, Color, and Thickness
+        df["Brand"] = df["Product Variant"].str.extract(r'- ([\w\s]+)\(')
+        df["Location"] = df["Product Variant"].str.extract(r'\((\w+)\)')
+        df["Thickness"] = df["Product Variant"].str.extract(r'(\d+\.?\d*cm)')
+        
+        # Extract Color correctly (keeping # if present)
+        df["Color"] = df["Product Variant"].str.extract(r'\) (.+) (\d+\.?\d*cm)')[0]
+
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Error loading the file: {e}")
         return None
 
-    xls = pd.ExcelFile(BytesIO(response.content), engine="openpyxl")
-    df = pd.read_excel(xls, sheet_name='Sheet1')
-
-    # Ensure column names are clean
-    df.columns = df.columns.str.strip()
-
-    # Convert numerical fields
-    df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors='coerce')
-    df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace('[\$,]', '', regex=True).astype(float)
-
-    # 📌 Extracting Brand, Location, Color, and Thickness
-    df["Brand"] = df["Product Variant"].str.extract(r'- ([\w\s]+)\(')
-    df["Location"] = df["Product Variant"].str.extract(r'\((\w+)\)')
-    df["Thickness"] = df["Product Variant"].str.extract(r'(\d+\.?\d*cm)')
-    
-    # Extract Color correctly (keeping # if present)
-    df["Color"] = df["Product Variant"].str.extract(r'\) (.+) \d+\.?\d*cm')
-
-    return df
-
-# Load inventory
+# Load data
 df_inventory = load_data()
-
 if df_inventory is None:
-    st.stop()
+    st.stop()  # Stop execution if data fails to load
 
-# 🎛 Editable Control Panel for Pricing Adjustments
-st.sidebar.header("🔧 Pricing Control Panel")
-default_fabrication_cost = st.sidebar.number_input("Fabrication Cost per Sq Ft ($)", value=23.00)
-default_temp_install_cost = st.sidebar.number_input("Temp/Install Cost per Sq Ft ($)", value=23.00)
+# 🎨 Streamlit UI - Title & Instructions
+st.title("🛠️ Countertop Cost Estimator")
+st.write("Select options below to estimate costs based on available inventory.")
 
-# 🎨 Dropdowns based on the cleaned file
-thickness_options = df_inventory["Thickness"].unique()
-selected_thickness = st.selectbox("Select Thickness", thickness_options)
+# 🎛️ Select Thickness (Dropdown)
+thickness_options = df_inventory["Thickness"].dropna().unique()
+selected_thickness = st.selectbox("Select Thickness:", thickness_options)
 
-# Filter colors based on the selected thickness
-filtered_colors = df_inventory[df_inventory["Thickness"] == selected_thickness]["Color"].unique()
-selected_color = st.selectbox("Select Color", filtered_colors)
+# 🎛️ Filter Colors based on Thickness
+filtered_df = df_inventory[df_inventory["Thickness"] == selected_thickness]
+color_options = filtered_df["Color"].dropna().unique()
+selected_color = st.selectbox("Select Color:", color_options if len(color_options) > 0 else ["No colors available"])
 
-# Find matching slab details
-selected_slab = df_inventory[(df_inventory["Thickness"] == selected_thickness) & (df_inventory["Color"] == selected_color)]
+# 🧮 Editable Cost Inputs
+st.subheader("🔧 Adjustable Pricing")
+temp_install = st.number_input("Temp/Install Cost per sq.ft", value=23, min_value=0)
+fabrication_cost = st.number_input("Fabrication Cost per sq.ft", value=23, min_value=0)
 
-if selected_slab.empty:
-    st.warning("No slabs found for the selected combination.")
-    st.stop()
+# 📊 Calculate Costs based on Selections
+selected_row = filtered_df[filtered_df["Color"] == selected_color]
 
-# Show available slabs and details
-st.write(f"**Available Slabs:** {selected_slab['Available Qty'].sum()} sq ft")
+if not selected_row.empty:
+    slab_cost = selected_row["Serialized On Hand Cost"].values[0]
+    slab_sqft = selected_row["Available Qty"].values[0]
 
-# 📌 Pricing Calculations
-slab_cost = selected_slab.iloc[0]["Serialized On Hand Cost"]
-available_sqft = selected_slab.iloc[0]["Available Qty"]
-sqft_price = slab_cost / available_sqft  # Price per sq ft
-ib_price = (sqft_price + default_fabrication_cost) * 1.2  # IB Cost
-sale_price = (ib_price + default_temp_install_cost) * 1.2  # Final sale price
+    sq_ft_price = slab_cost / slab_sqft
+    ib_sq_ft_price = (sq_ft_price + fabrication_cost) * 1.2
+    sale_price = (ib_sq_ft_price + temp_install) * 1.2
 
-# 🛒 Display Pricing
-if st.button("Estimate Price"):
-    st.subheader("💰 Estimated Pricing")
-    st.write(f"**Sq Ft Price:** ${sqft_price:.2f}")
-    st.write(f"**IB Price:** ${ib_price:.2f}")
-    st.write(f"**Sale Price:** ${sale_price:.2f}")
+    # 💰 Estimate Button
+    if st.button("💰 Estimate Price"):
+        st.success(f"Estimated Sale Price: **${sale_price:.2f} per sq.ft**")
 
-    # Expandable full details
-    with st.expander("📊 Full Cost Breakdown"):
-        st.write(f"- **Fabrication Cost:** ${default_fabrication_cost}")
-        st.write(f"- **Temp/Install Cost:** ${default_temp_install_cost}")
-        st.write(f"- **Base Sq Ft Cost:** ${sqft_price:.2f}")
-        st.write(f"- **IB Sq Ft Price:** ${ib_price:.2f}")
-        st.write(f"- **Final Sale Price:** ${sale_price:.2f}")
+        # 🧐 Cost Breakdown Toggle
+        with st.expander("📊 Full Cost Breakdown"):
+            st.write(f"**Slab Cost:** ${slab_cost:.2f}")
+            st.write(f"**Slab Sq Ft:** {slab_sqft:.2f} sq.ft")
+            st.write(f"**Price per Sq Ft:** ${sq_ft_price:.2f}")
+            st.write(f"**IB Sq Ft Price:** ${ib_sq_ft_price:.2f}")
+            st.write(f"**Sale Price per Sq Ft:** ${sale_price:.2f}")
+
+else:
+    st.warning("⚠️ No matching slabs found. Try another selection.")

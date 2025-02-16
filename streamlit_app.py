@@ -49,12 +49,12 @@ def calculate_costs(slab, sq_ft_needed):
     # Adjustable constants:
     MARKUP_FACTOR = 1.15         # 15% markup
     INSTALL_COST_PER_SQFT = 23   # $23 per sq.ft installation cost
-    FABRICATION_COST_PER_SQFT = 23  # $23 per sq.ft fabrication cost (for IB calculation)
+    FABRICATION_COST_PER_SQFT = 23  # $23 per sq.ft fabrication cost (used in IB calculation)
 
     available_sq_ft = slab["Available Sq Ft"]
 
     # Material cost with markup (for total cost calculation)
-    slab_cost = slab["Serialized On Hand Cost"] * MARKUP_FACTOR
+    slab_cost = slab["Serialized On Hand Cost"] * MARKUP_FACTOR  
     material_cost = (slab_cost / available_sq_ft) * sq_ft_needed
 
     # Installation cost (based on a fixed rate)
@@ -135,14 +135,14 @@ if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
 st.subheader("💰 Estimated Total Cost")
 st.markdown(f"**${costs['total_cost']:,.2f}**")
 
-# Show full cost breakdown if the user checks the option
+# Show full cost breakdown with simplified wording
 if st.checkbox("🔍 Full Cost Breakdown"):
     st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
     st.write(f"**Serial Number:** {costs['serial_number']}")
-    st.write(f"**Material Cost (with markup) for {sq_ft_needed} sq.ft:** ${costs['material_cost']:,.2f}")
-    st.write(f"**Installation Cost for {sq_ft_needed} sq.ft:** ${costs['install_cost']:,.2f}")
-    st.write(f"**IB Cost (Base Material + Fabrication) for {sq_ft_needed} sq.ft:** ${costs['ib_cost']:,.2f}")
-    st.write(f"**Total Cost for {sq_ft_needed} sq.ft:** **${costs['total_cost']:,.2f}**")
+    st.write(f"**Material & Fab:** ${costs['material_cost']:,.2f}")
+    st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
+    st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
+    st.write(f"**Total:** ${costs['total_cost']:,.2f}")
 
 # Provide a Google Search link for the selected countertop style
 google_search_query = f"{selected_full_name} Countertop"

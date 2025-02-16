@@ -37,7 +37,8 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     """
-    Calculates the material, installation, and IB costs based on the slab details and required square footage.
+    Calculates the cost breakdown including material with fabrication,
+    installation, total cost, and IB cost.
     
     Args:
         slab (pd.Series): A row from the DataFrame containing slab information.
@@ -47,31 +48,35 @@ def calculate_costs(slab, sq_ft_needed):
         dict: A dictionary with the cost breakdown.
     """
     # Adjustable constants:
-    MARKUP_FACTOR = 1.15         # 15% markup
+    MARKUP_FACTOR = 1.15         # 15% markup on material
     INSTALL_COST_PER_SQFT = 23   # $23 per sq.ft installation cost
-    FABRICATION_COST_PER_SQFT = 23  # $23 per sq.ft fabrication cost (used in IB calculation)
+    FABRICATION_COST_PER_SQFT = 23  # $23 per sq.ft fabrication cost
 
     available_sq_ft = slab["Available Sq Ft"]
 
-    # Material cost with markup (for total cost calculation)
-    slab_cost = slab["Serialized On Hand Cost"] * MARKUP_FACTOR  
-    material_cost = (slab_cost / available_sq_ft) * sq_ft_needed
+    # Material cost with markup (without fabrication)
+    material_cost = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
 
-    # Installation cost (based on a fixed rate)
+    # Fabrication total cost
+    fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
+
+    # Material & Fab line (material cost with markup + fabrication)
+    material_and_fab = material_cost + fabrication_total
+
+    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
 
-    # Total cost = material (with markup) + installation
-    total_cost = material_cost + install_cost
+    # Total cost = Material & Fab + Installation
+    total_cost = material_and_fab + install_cost
 
-    # IB Calculation: based on base material cost (before markup) plus fabrication cost
+    # IB Calculation: (base material cost without markup + fabrication) * sq_ft_needed
     base_material_cost_per_sq_ft = slab["Serialized On Hand Cost"] / available_sq_ft
-    ib_cost_per_sq_ft = base_material_cost_per_sq_ft + FABRICATION_COST_PER_SQFT
-    ib_total_cost = ib_cost_per_sq_ft * sq_ft_needed
+    ib_total_cost = (base_material_cost_per_sq_ft + FABRICATION_COST_PER_SQFT) * sq_ft_needed
 
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
-        "material_cost": material_cost,
+        "material_and_fab": material_and_fab,
         "install_cost": install_cost,
         "total_cost": total_cost,
         "ib_cost": ib_total_cost
@@ -135,11 +140,11 @@ if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
 st.subheader("💰 Estimated Total Cost")
 st.markdown(f"**${costs['total_cost']:,.2f}**")
 
-# Show full cost breakdown with simplified wording
+# Show full cost breakdown with simplified labels
 if st.checkbox("🔍 Full Cost Breakdown"):
     st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
     st.write(f"**Serial Number:** {costs['serial_number']}")
-    st.write(f"**Material & Fab:** ${costs['material_cost']:,.2f}")
+    st.write(f"**Material & Fab:** ${costs['material_and_fab']:,.2f}")
     st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
     st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
     st.write(f"**Total:** ${costs['total_cost']:,.2f}")

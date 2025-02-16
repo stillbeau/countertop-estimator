@@ -20,13 +20,21 @@ def load_data():
         # ✅ Strip whitespace from column headers to prevent name mismatches
         df.columns = df.columns.str.strip()
 
-        # ✅ Convert serialized cost column (remove "$" and convert to float)
+        # ✅ Convert Serialized On Hand Cost column (remove "$" and convert to float)
         df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
 
-        # ✅ Convert available square footage column to numeric
+        # ✅ Convert Available Sq Ft column to float
         df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
 
+        # ✅ Convert Serial Number to integer (handling NaN values safely)
+        df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
+
         return df
+
+    except Exception as e:
+        st.error(f"❌ Failed to load data: {e}")
+        return None
+
 
     except Exception as e:
         st.error(f"❌ Failed to load data: {e}")

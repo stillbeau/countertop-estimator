@@ -34,6 +34,9 @@ def load_data():
         # Extract Color correctly (keeping # if present)
         df["Color"] = df["Product Variant"].str.extract(r'\) (.+) (\d+\.?\d*cm)')[0]
 
+        # ✅ Combine Brand & Color for selection
+        df["Brand_Color"] = df["Brand"].str.strip() + " - " + df["Color"].str.strip()
+
         return df
 
     except Exception as e:
@@ -62,8 +65,8 @@ selected_thickness = st.selectbox("Select Thickness:", thickness_options)
 
 # 🎛️ Filter Colors based on Thickness
 filtered_df = filtered_df[filtered_df["Thickness"] == selected_thickness]
-color_options = filtered_df["Color"].dropna().unique()
-selected_color = st.selectbox("Select Color:", color_options if len(color_options) > 0 else ["No colors available"])
+color_options = filtered_df["Brand_Color"].dropna().unique()
+selected_brand_color = st.selectbox("Select Material (Brand - Color):", color_options if len(color_options) > 0 else ["No colors available"])
 
 # 🔢 Enter Required Square Footage
 required_sq_ft = st.number_input("Enter Required Square Footage:", min_value=1, value=20)
@@ -74,7 +77,7 @@ temp_install = st.number_input("Temp/Install Cost per sq.ft", value=23, min_valu
 fabrication_cost = st.number_input("Fabrication Cost per sq.ft", value=23, min_value=0)
 
 # 📊 Calculate Costs based on Selections
-selected_row = filtered_df[filtered_df["Color"] == selected_color]
+selected_row = filtered_df[filtered_df["Brand_Color"] == selected_brand_color]
 
 if not selected_row.empty:
     slab_cost = selected_row["Serialized On Hand Cost"].values[0]
@@ -104,7 +107,7 @@ if not selected_row.empty:
                 st.write(f"**Total Cost for {required_sq_ft} sq.ft:** ${total_cost:.2f}")
 
             # 🔍 Google Image Search Button
-            google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_color}+countertop"
+            google_search_url = f"https://www.google.com/search?tbm=isch&q={selected_brand_color}+countertop"
             if st.button("🔍 Search for Images on Google"):
                 webbrowser.open(google_search_url)
 

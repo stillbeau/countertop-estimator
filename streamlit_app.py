@@ -26,13 +26,12 @@ def load_data():
         df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors='coerce')
         df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace('[\$,]', '', regex=True).astype(float)
 
-        # 📌 Extract Brand, Location, Color, and Thickness
+        # 📌 Extract Brand, Location, Color, Thickness, and Serial Number
         df["Brand"] = df["Product Variant"].str.extract(r'- ([\w\s]+)\(')
         df["Location"] = df["Product Variant"].str.extract(r'\((\w+)\)')
         df["Thickness"] = df["Product Variant"].str.extract(r'(\d+\.?\d*cm)')
-        
-        # Extract Color correctly (keeping # if present)
         df["Color"] = df["Product Variant"].str.extract(r'\) (.+) (\d+\.?\d*cm)')[0]
+        df["Serial Number"] = df["Serial Number"].astype(str)  # Ensure it's treated as text
 
         # ✅ Combine Brand & Color for selection
         df["Brand_Color"] = df["Brand"].str.strip() + " - " + df["Color"].str.strip()
@@ -71,10 +70,11 @@ selected_brand_color = st.selectbox("Select Material (Brand - Color):", color_op
 # 🔢 Enter Required Square Footage
 required_sq_ft = st.number_input("Enter Required Square Footage:", min_value=1, value=20)
 
-# 🧮 Editable Cost Inputs
-st.subheader("🔧 Adjustable Pricing")
-temp_install = st.number_input("Temp/Install Cost per sq.ft", value=23, min_value=0)
-fabrication_cost = st.number_input("Fabrication Cost per sq.ft", value=23, min_value=0)
+# 🛠️ Admin Settings for Pricing (Hidden from Main Page)
+with st.sidebar:
+    st.header("🔑 Admin Settings")
+    temp_install = st.number_input("Temp/Install Cost per sq.ft", value=23, min_value=0)
+    fabrication_cost = st.number_input("Fabrication Cost per sq.ft", value=23, min_value=0)
 
 # 📊 Calculate Costs based on Selections
 selected_row = filtered_df[filtered_df["Brand_Color"] == selected_brand_color]
@@ -82,6 +82,7 @@ selected_row = filtered_df[filtered_df["Brand_Color"] == selected_brand_color]
 if not selected_row.empty:
     slab_cost = selected_row["Serialized On Hand Cost"].values[0]
     slab_sqft = selected_row["Available Qty"].values[0]
+    serial_number = selected_row["Serial Number"].values[0]  # Get Serial Number
 
     # 🚨 Ensure required square footage is available
     required_with_waste = required_sq_ft * 1.2  # Adding 20% waste factor
@@ -101,6 +102,7 @@ if not selected_row.empty:
             with st.expander("📊 Full Cost Breakdown"):
                 st.write(f"**Slab Cost:** ${slab_cost:.2f}")
                 st.write(f"**Slab Sq Ft:** {slab_sqft:.2f} sq.ft")
+                st.write(f"**Serial Number:** {serial_number}")
                 st.write(f"**Price per Sq Ft:** ${sq_ft_price:.2f}")
                 st.write(f"**IB Sq Ft Price:** ${ib_sq_ft_price:.2f}")
                 st.write(f"**Sale Price per Sq Ft:** ${sale_price:.2f}")

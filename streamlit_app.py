@@ -41,48 +41,61 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-
-    # Material cost (with markup), without fabrication
-    material_cost_with_markup = (
-        slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft
-    ) * sq_ft_needed
-
+    # Calculate material cost with markup (without fabrication)
+    material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
-
-    # Material & Fab
+    # Material & Fab total
     material_and_fab = material_cost_with_markup + fabrication_total
-
     # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-
     # Total (before tax)
     total_cost = material_and_fab + install_cost
-
-    # IB Calculation: base material (without markup) + fabrication cost + optional IB rate
-    ib_total_cost = (
-        (slab["Serialized On Hand Cost"] / available_sq_ft)
-        + FABRICATION_COST_PER_SQFT
-        + ADDITIONAL_IB_RATE
-    ) * sq_ft_needed
+    # IB Calculation: base material (without markup) + fabrication cost + any additional rate
+    ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
 
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
-        "ib_cost": ib_total_cost,
+        "total_cost": total_cost,     # before tax
+        "ib_cost": ib_total_cost
     }
 
-# --- Title & Subtitle ---
+# --- Email Configuration ---
+# These values are ideally set as environment variables.
+SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
+EMAIL_USER = os.environ.get("EMAIL_USER", "Okquotesff@gmail.com")
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD", "Countertops2024")
+# Recipient email set to a different address:
+RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
+
+def send_email(subject, body):
+    msg = MIMEMultipart()
+    msg["From"] = EMAIL_USER
+    msg["To"] = RECIPIENT_EMAIL
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+    try:
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Failed to send email: {e}")
+        return False
+
+# --- UI: Title & Subtitle ---
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project")
 
-# Load data
+# --- Load Data ---
 with st.spinner("Loading data..."):
     df_inventory = load_data()
-
 if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
@@ -116,19 +129,16 @@ selected_slab = selected_slab_df.iloc[0]
 
 sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
 
-# Calculate costs
+# --- Calculate Costs ---
 costs = calculate_costs(selected_slab, sq_ft_needed)
-
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# --- Calculate GST & Final Price ---
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
 
-# --- Display Final Price ---
-# Using Streamlit's new color syntax (requires v1.22+); if not available, it will show plain text.
+# --- Display Final Price (Green Text) ---
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 
 with st.expander("View Subtotal & GST"):
@@ -163,7 +173,6 @@ with st.form("customer_form"):
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Compose the breakdown details
     breakdown_info = f"""
 Countertop Cost Estimator Details:
 - Slab: {selected_full_name}
@@ -184,28 +193,7 @@ Customer Information:
 """
     email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
     subject = f"New Countertop Request from {name}"
-    
-    # Email settings from environment variables (set these in your deployment environment)
-    SMTP_SERVER = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
-    SMTP_PORT = int(os.environ.get("SMTP_PORT", 587))
-    EMAIL_USER = os.environ.get("EMAIL_USER")  # your email address
-    EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")  # your email password or app password
-    RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", EMAIL_USER)  # default to sender if not set
-
-    if EMAIL_USER is None or EMAIL_PASSWORD is None:
-        st.error("Email credentials are not set. Please set EMAIL_USER and EMAIL_PASSWORD environment variables.")
+    if send_email(subject, email_body):
+        st.success("Your request has been submitted successfully! We will contact you soon.")
     else:
-        try:
-            msg = MIMEMultipart()
-            msg["From"] = EMAIL_USER
-            msg["To"] = RECIPIENT_EMAIL
-            msg["Subject"] = subject
-            msg.attach(MIMEText(email_body, "plain"))
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-            server.starttls()
-            server.login(EMAIL_USER, EMAIL_PASSWORD)
-            server.send_message(msg)
-            server.quit()
-            st.success("Your request has been submitted successfully! We will contact you soon.")
-        except Exception as e:
-            st.error(f"Failed to send email: {e}")
+        st.error("Failed to send email. Please try again later.")

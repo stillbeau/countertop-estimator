@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 
 # Google Sheets URL (Ensure it's a published CSV link)
-GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
+GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/edit?usp=sharing"
 
 # Load Data
 @st.cache_data

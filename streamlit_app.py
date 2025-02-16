@@ -5,21 +5,37 @@ import io
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv  # optional if you're loading from .env locally
 
-# === CONFIGURATION SECTION ===
+# Load secrets (for local testing using .env, otherwise Streamlit Cloud uses st.secrets automatically)
+# Uncomment the next line if you use a local .env file:
+# load_dotenv()
+
+# --- Ensure all required secrets are present ---
+required_keys = ["SMTP_SERVER", "SMTP_PORT", "EMAIL_USER", "EMAIL_PASSWORD", "RECIPIENT_EMAIL"]
+for key in required_keys:
+    if key not in st.secrets:
+        st.error(f"Missing required secret: {key}")
+        st.stop()
+
+# --- Email configuration from secrets ---
+SMTP_SERVER = st.secrets["SMTP_SERVER"]
+SMTP_PORT = int(st.secrets["SMTP_PORT"])
+EMAIL_USER = st.secrets["EMAIL_USER"]
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
+RECIPIENT_EMAIL = st.secrets["RECIPIENT_EMAIL"]
+
+# --- Other Configurations ---
 MARKUP_FACTOR = 1.15            # 15% markup on material cost
 INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05                 # 5% GST
-# =============================
 
 # Google Sheets URL for cost data
 GOOGLE_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 )
-
-st.write("Loaded secrets:", st.secrets)
 
 @st.cache_data
 def load_data():
@@ -44,15 +60,10 @@ def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
     # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
-    # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
-    # Material & Fab total
     material_and_fab = material_cost_with_markup + fabrication_total
-    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    # Total (before tax)
-    total_cost = material_and_fab + install_cost
-    # IB Calculation: base material (without markup) + fabrication cost + any additional rate
+    total_cost = material_and_fab + install_cost  # before tax
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
 
     return {
@@ -60,16 +71,9 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,     # before tax
+        "total_cost": total_cost,
         "ib_cost": ib_total_cost
     }
-
-# --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]
-SMTP_PORT = int(st.secrets["SMTP_PORT"])
-EMAIL_USER = st.secrets["EMAIL_USER"]
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 def send_email(subject, body):
     msg = MIMEMultipart()
@@ -78,6 +82,7 @@ def send_email(subject, body):
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     try:
+        # Connect to Brevo's SMTP server
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(EMAIL_USER, EMAIL_PASSWORD)

@@ -3,12 +3,13 @@ import pandas as pd
 import requests
 import io
 
-# === CONFIGURATION SECTION (Adjustable Rates & Markups) ===
+# === CONFIGURATION SECTION (Hidden in code) ===
 # Change these values as needed.
-MARKUP_FACTOR = 1.30            # 30% markup on material cost
+MARKUP_FACTOR = 1.15            # 15% markup on material cost
 INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
-# ==========================================================
+ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
+# ==============================================
 
 # Google Sheets URL
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
@@ -46,7 +47,7 @@ def calculate_costs(slab, sq_ft_needed):
       - Material & Fab (material cost with markup plus fabrication cost)
       - Installation
       - Total cost (Material & Fab + Installation)
-      - IB (base material cost without markup plus fabrication)
+      - IB cost: Uses marked-up material cost plus an additional IB rate and fabrication cost.
     
     Args:
         slab (pd.Series): A row from the DataFrame containing slab information.
@@ -60,7 +61,7 @@ def calculate_costs(slab, sq_ft_needed):
     # Material cost with markup (without fabrication)
     material_cost = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
 
-    # Fabrication total cost
+    # Fabrication total cost (for Material & Fab)
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
 
     # Material & Fab: marked-up material cost plus fabrication cost
@@ -72,9 +73,8 @@ def calculate_costs(slab, sq_ft_needed):
     # Total cost = Material & Fab + Installation
     total_cost = material_and_fab + install_cost
 
-    # IB Calculation: (base material cost without markup + fabrication) * sq_ft_needed
-    base_material_cost_per_sq_ft = slab["Serialized On Hand Cost"] / available_sq_ft
-    ib_total_cost = (base_material_cost_per_sq_ft + FABRICATION_COST_PER_SQFT) * sq_ft_needed
+    # IB Calculation: use the material cost with markup, then add the additional IB rate and fabrication cost
+    ib_total_cost = (((slab["Serialized On Hand Cost"] * MARKUP_FACTOR) / available_sq_ft) + ADDITIONAL_IB_RATE + FABRICATION_COST_PER_SQFT) * sq_ft_needed
 
     return {
         "available_sq_ft": available_sq_ft,

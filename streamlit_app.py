@@ -46,13 +46,13 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
+    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
     material_and_fab = material_cost_with_markup + fabrication_total
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
     total_cost = material_and_fab + install_cost
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
-
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
@@ -97,8 +97,7 @@ if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-# Default to "3cm" thickness (index 2 in the options list)
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -108,16 +107,15 @@ df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-# --- Edge Profile and Google Search Link in Columns ---
 col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
+    st.markdown(f"[🔎 Google Image Search]({search_url})")
 
-st.markdown(f"<a class='styled-link' href='https://floform.com/countertops/edge-profiles/' target='_blank'>Floform Edge Profiles</a>", unsafe_allow_html=True)
+st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:
@@ -125,14 +123,13 @@ if selected_slab_df.empty:
     st.stop()
 selected_slab = selected_slab_df.iloc[0]
 
-# --- Number Input for Square Footage (whole number, no decimal) ---
 sq_ft_needed = st.number_input(
     "Enter Square Footage Needed", 
     min_value=1, 
     value=20, 
     step=1, 
     format="%d",
-    help="Measure the front edge and depth (in inches) of your countertop, multiply them together, and divide by 144 to calculate the square footage."
+    help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144 to calculate the square footage."
 )
 
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -149,20 +146,22 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Request a Quote Expander with Form ---
-with st.expander("Request a Quote"):
-    st.write("Fill in your contact information below and we'll get in touch with you.")
-    with st.form("customer_form"):
-        name = st.text_input("Name")
-        email = st.text_input("Email")
-        phone = st.text_input("Phone Number")
-        address = st.text_area("Address")
-        city = st.text_input("City")
-        postal_code = st.text_input("Postal Code")
-        sales_person = st.text_input("Sales Person")
-        submit_request = st.form_submit_button("Submit Request")
+# --- Request a Quote (Form displayed by default) ---
+st.markdown("## Request a Quote")
+st.write("Fill in your contact information below and we'll get in touch with you.")
 
-if "submit_request" in locals() and submit_request:
+with st.form("customer_form"):
+    name = st.text_input("Name")
+    email = st.text_input("Email")
+    phone = st.text_input("Phone Number")
+    address = st.text_area("Address")
+    city = st.text_input("City")
+    postal_code = st.text_input("Postal Code")
+    sales_person = st.text_input("Sales Person")
+    submit_request = st.form_submit_button("Submit Request")
+
+if submit_request:
+    # Validate required fields: Name, Email, and City
     if not name.strip() or not email.strip() or not city.strip():
         st.error("Name, Email, and City are required fields.")
     else:

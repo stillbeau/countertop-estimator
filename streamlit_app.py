@@ -6,21 +6,21 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- Email Configuration ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          
-SMTP_PORT = int(st.secrets["SMTP_PORT"])         
-EMAIL_USER = st.secrets["EMAIL_USER"]            
+# --- Email Configuration using st.secrets ---
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
-MARKUP_FACTOR = 1.15
-INSTALL_COST_PER_SQFT = 23
-FABRICATION_COST_PER_SQFT = 23
-ADDITIONAL_IB_RATE = 0
-GST_RATE = 0.05
+MARKUP_FACTOR = 1.15            # 15% markup on material cost
+INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
+FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
+ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
+GST_RATE = 0.05                 # 5% GST
 
-# --- Google Sheets URL ---
+# --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 )
@@ -46,24 +46,19 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Material cost with markup
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
-    # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
-    # Material & Fab
     material_and_fab = material_cost_with_markup + fabrication_total
-    # Installation
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    # Total (before tax)
     total_cost = material_and_fab + install_cost
-    # IB Calculation
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,
+        "total_cost": total_cost,  # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -84,7 +79,7 @@ def send_email(subject, body):
         st.error(f"Failed to send email: {e}")
         return False
 
-# --- Title ---
+# --- UI: Title & Subtitle ---
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project")
 
@@ -95,51 +90,54 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# --- Filters ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
+# --- Filters for Slab Selection ---
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
-    st.warning("No slabs found for this location.")
+    st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # default to 3cm
+# Default to "3cm" thickness (index 2 in the options list)
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
-    st.warning("No slabs match this thickness.")
+    st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
 df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
+# --- Edge Profile and Google Search Link in Columns ---
 col1, col2 = st.columns([2,1])
 with col1:
-    selected_edge_profile = st.selectbox("Select Edge Profile", ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
+    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"[🔎 Google Image Search]({search_url})")
+    st.markdown(f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
 
-st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
+st.markdown(f"<a class='styled-link' href='https://floform.com/countertops/edge-profiles/' target='_blank'>Floform Edge Profiles</a>", unsafe_allow_html=True)
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:
-    st.error("Selected slab not found.")
+    st.error("Selected slab not found. Please choose a different option.")
     st.stop()
 selected_slab = selected_slab_df.iloc[0]
 
+# --- Number Input for Square Footage (whole number, no decimal) ---
 sq_ft_needed = st.number_input(
-    "Enter Square Footage Needed",
-    min_value=1,
-    value=20,
-    step=1,
+    "Enter Square Footage Needed", 
+    min_value=1, 
+    value=20, 
+    step=1, 
     format="%d",
-    help="Measure front edge and depth in inches, multiply, then divide by 144."
+    help="Measure the front edge and depth (in inches) of your countertop, multiply them together, and divide by 144 to calculate the square footage."
 )
 
 costs = calculate_costs(selected_slab, sq_ft_needed)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
-    st.error("⚠️ Not enough material available! Consider another slab.")
+    st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
@@ -151,12 +149,10 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# Here we place the form inside an expander labeled "Request a Quote"
+# --- Request a Quote Expander with Form ---
 with st.expander("Request a Quote", expanded=False):
     st.write("Fill in your contact information below and we'll get in touch with you.")
-    
-    # We define the form within this expander
-    with st.form("quote_form"):
+    with st.form("customer_form"):
         name = st.text_input("Name")
         email = st.text_input("Email")
         phone = st.text_input("Phone Number")
@@ -164,10 +160,8 @@ with st.expander("Request a Quote", expanded=False):
         city = st.text_input("City")
         postal_code = st.text_input("Postal Code")
         sales_person = st.text_input("Sales Person")
-
         submit_request = st.form_submit_button("Submit Request")
 
-# Now we handle the form submission outside the expander
 if "submit_request" in locals() and submit_request:
     if not name.strip() or not email.strip() or not city.strip():
         st.error("Name, Email, and City are required fields.")
@@ -202,9 +196,8 @@ Sales Person: {sales_person}
 """
         email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
         subject = f"New Countertop Request from {name}"
-
         if send_email(subject, email_body):
             st.success("Your request has been submitted successfully! We will contact you soon.")
-            st.experimental_rerun()  # Clears the form by re-running the app
+            st.experimental_rerun()  # Clear the form
         else:
             st.error("Failed to send email. Please try again later.")

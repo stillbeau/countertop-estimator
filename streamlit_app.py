@@ -104,7 +104,6 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
-# Create a new column "Full Name" that combines Brand and Color.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 
 # --- Square Footage Input ---
@@ -117,12 +116,7 @@ sq_ft_needed = st.number_input(
     help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144."
 )
 
-# --- Minimum and Maximum Job Cost Inputs ---
-min_job_cost = st.number_input("Enter Minimum Job Cost ($)", min_value=0, value=0, step=10)
-max_job_cost = st.number_input("Enter Maximum Job Cost ($)", min_value=0, value=10000, step=10)
-
-# --- Filter Available Slabs Based on Cost ---
-# Compute the final price for each slab in df_filtered based on the provided square footage.
+# --- Compute Final Price for Each Slab for Filtering ---
 def compute_final_price(row):
     cost_info = calculate_costs(row, sq_ft_needed)
     total = cost_info["total_cost"]
@@ -131,8 +125,13 @@ def compute_final_price(row):
 
 df_filtered["final_price"] = df_filtered.apply(lambda row: compute_final_price(row), axis=1)
 
-# Filter the DataFrame based on the min and max job cost
-df_cost_filtered = df_filtered[(df_filtered["final_price"] >= min_job_cost) & (df_filtered["final_price"] <= max_job_cost)]
+# --- Maximum Job Cost Slider ---
+max_possible_cost = int(df_filtered["final_price"].max())
+max_job_cost = st.slider("Select Maximum Job Cost ($)", min_value=0, max_value=max_possible_cost, value=max_possible_cost//2)
+st.write("Selected Maximum Job Cost: $", max_job_cost)
+
+# --- Filter slabs based on cost ---
+df_cost_filtered = df_filtered[df_filtered["final_price"] <= max_job_cost]
 if df_cost_filtered.empty:
     st.error("No slabs available within the selected cost range.")
     st.stop()
@@ -140,7 +139,7 @@ if df_cost_filtered.empty:
 # --- Slab Color Selection from Filtered Options ---
 selected_full_name = st.selectbox("Select Color", options=df_cost_filtered["Full Name"].unique())
 
-# --- Edge Profile and Links ---
+# --- Edge Profile and Google Search Link in Columns ---
 col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
@@ -174,7 +173,6 @@ with st.expander("View Subtotal & GST"):
 # --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
-
 with st.form("customer_form"):
     name = st.text_input("Name *")
     email = st.text_input("Email *")

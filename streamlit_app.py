@@ -7,9 +7,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])         # 587
-EMAIL_USER = st.secrets["EMAIL_USER"]            # "85e00d001@smtp-brevo.com"
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -64,7 +64,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -111,11 +111,20 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
+# "Full Name" contains brand and color only.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-edge_profiles = ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"]
-selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles)
+# --- Edge Profile and Google Search Link in Columns ---
+col1, col2 = st.columns([2,1])
+with col1:
+    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
+with col2:
+    # Google search query uses only the brand and color, not the edge profile.
+    google_search_query = f"{selected_full_name} countertop"
+    search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
+    st.markdown(f"[🔎 Google Image Search]({search_url})")
+
 st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
@@ -124,7 +133,8 @@ if selected_slab_df.empty:
     st.stop()
 selected_slab = selected_slab_df.iloc[0]
 
-sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
+# --- Number Input for Square Footage as Whole Number ---
+sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1, value=20, step=1)
 
 # --- Calculate Costs ---
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -159,6 +169,7 @@ if submit_request:
     # Build full breakdown details for the email (not shown in the UI)
     breakdown_info = f"""
 Countertop Cost Estimator Details:
+--------------------------------------------------
 - Slab: {selected_full_name}
 - Edge Profile: {selected_edge_profile}
 - Square Footage: {sq_ft_needed}
@@ -170,19 +181,23 @@ Countertop Cost Estimator Details:
 - Subtotal (before tax): ${sub_total:,.2f}
 - GST (5%): ${gst_amount:,.2f}
 - Final Price: ${final_price:,.2f}
+--------------------------------------------------
 """
     customer_info = f"""
 Customer Information:
+--------------------------------------------------
 - Name: {name}
 - Email: {email}
 - Phone: {phone}
 - Address: {address}
 - City: {city}
 - Postal Code: {postal_code}
+--------------------------------------------------
 """
     email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
     subject = f"New Countertop Request from {name}"
     if send_email(subject, email_body):
         st.success("Your request has been submitted successfully! We will contact you soon.")
+        st.experimental_rerun()  # Clear the form by re-running the app
     else:
         st.error("Failed to send email. Please try again later.")

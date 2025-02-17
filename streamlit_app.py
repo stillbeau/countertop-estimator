@@ -6,19 +6,20 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# --- Configurations ---
+MINIMUM_SQ_FT = 30            # Minimum square footage for quoting
+MARKUP_FACTOR = 1.15          # 15% markup on material cost
+INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
+FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
+ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
+GST_RATE = 0.05               # 5% GST
+
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
-
-# --- Other Configurations ---
-MARKUP_FACTOR = 1.15            # 15% markup on material cost
-INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
-FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
-ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
-GST_RATE = 0.05                 # 5% GST
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -42,15 +43,15 @@ def load_data():
         st.error(f"❌ Failed to load data: {e}")
         return None
 
-def calculate_aggregated_costs(record, sq_ft_needed):
+def calculate_aggregated_costs(record, sq_ft_used):
     # record["unit_cost"] is the maximum unit cost among slabs for that color
     unit_cost = record["unit_cost"]
-    material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_needed
-    fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
+    material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
+    fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
     material_and_fab = material_cost_with_markup + fabrication_total
-    install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
+    install_cost = INSTALL_COST_PER_SQFT * sq_ft_used
     total_cost = material_and_fab + install_cost
-    ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+    ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used
     return {
         "available_sq_ft": record["Available Sq Ft"],
         "material_and_fab": material_and_fab,
@@ -87,24 +88,15 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# --- Basic Filters ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
-df_filtered = df_inventory[df_inventory["Location"] == location]
-if df_filtered.empty:
-    st.warning("No slabs found for the selected location.")
-    st.stop()
-
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
-df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
-if df_filtered.empty:
-    st.warning("No slabs match the selected thickness. Please adjust your filter.")
-    st.stop()
-
-df_filtered = df_filtered.copy()
-df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
+# --- Remove location and thickness filters ---
+# Map location codes to supplier names
+supplier_mapping = {"VER": "Vernon", "ABB": "Abbotsford"}
+df_inventory["Supplier"] = df_inventory["Location"].map(supplier_mapping)
+# Create a combined identifier for the slab (Brand - Color)
+df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
 
 # --- Square Footage Input ---
-sq_ft_needed = st.number_input(
+sq_ft_input = st.number_input(
     "Enter Square Footage Needed", 
     min_value=1, 
     value=20, 
@@ -112,18 +104,24 @@ sq_ft_needed = st.number_input(
     format="%d",
     help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
 )
+# Enforce the minimum square footage
+if sq_ft_input < MINIMUM_SQ_FT:
+    sq_ft_used = MINIMUM_SQ_FT
+    st.info(f"Minimum square footage is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} sq ft for pricing.")
+else:
+    sq_ft_used = sq_ft_input
 
-# --- Aggregate by Color ---
-df_filtered["unit_cost"] = df_filtered["Serialized On Hand Cost"] / df_filtered["Available Sq Ft"]
-df_agg = df_filtered.groupby("Full Name").agg({
+# --- Aggregate Data by Full Name and Supplier ---
+df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
+df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg({
     "Available Sq Ft": "sum",
     "unit_cost": "max",
     "Serial Number": "count"
 }).reset_index()
 df_agg.rename(columns={"Serial Number": "slab_count"}, inplace=True)
 
-# --- Filter Out Colors Without Enough Material ---
-required_material = sq_ft_needed * 1.2
+# --- Filter Out Options Without Enough Material ---
+required_material = sq_ft_used * 1.2
 df_agg = df_agg[df_agg["Available Sq Ft"] >= required_material]
 if df_agg.empty:
     st.error("No colors have enough total material for the selected square footage.")
@@ -131,15 +129,14 @@ if df_agg.empty:
 
 # --- Compute Final Price for Each Aggregated Record ---
 def compute_final_price(row):
-    cost_info = calculate_aggregated_costs(row, sq_ft_needed)
+    cost_info = calculate_aggregated_costs(row, sq_ft_used)
     total = cost_info["total_cost"]
     final = total + total * GST_RATE
     return final
 
-df_agg["final_price"] = df_agg.apply(lambda row: compute_final_price(row), axis=1)
+df_agg["final_price"] = df_agg.apply(compute_final_price, axis=1)
 
-# --- Set Slider with Dynamic Minimum ---
-# Filter out any rows where final_price is zero or less
+# --- Slider for Maximum Job Cost with Default Set to Maximum ---
 df_valid = df_agg[df_agg["final_price"] > 0]
 if df_valid.empty:
     st.error("No valid slab prices available.")
@@ -151,7 +148,8 @@ max_job_cost = st.slider(
     "Select Maximum Job Cost ($)",
     min_value=min_possible_cost,
     max_value=max_possible_cost,
-    value=max_possible_cost // 2
+    value=max_possible_cost,  # default now set to maximum available cost
+    step=100
 )
 st.write("Selected Maximum Job Cost: $", max_job_cost)
 
@@ -164,7 +162,7 @@ if df_agg_filtered.empty:
 selected_full_name = st.selectbox("Select Color", options=df_agg_filtered["Full Name"].unique())
 
 # --- Edge Profile and Links ---
-col1, col2 = st.columns([2,1])
+col1, col2 = st.columns([2, 1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
@@ -181,7 +179,7 @@ if selected_record.empty:
 selected_record = selected_record.iloc[0]
 
 # --- Calculate Costs for the Aggregated Record ---
-costs = calculate_aggregated_costs(selected_record, sq_ft_needed)
+costs = calculate_aggregated_costs(selected_record, sq_ft_used)
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
@@ -216,11 +214,12 @@ if submit_request:
 Countertop Cost Estimator Details:
 --------------------------------------------------
 Slab: {selected_record['Full Name']}
+Supplier: {selected_record['Supplier']}
 Edge Profile: {selected_edge_profile}
-Square Footage: {sq_ft_needed}
+Square Footage (used): {sq_ft_used}
 Slab Sq Ft (Aggregated): {selected_record['Available Sq Ft']:.2f} sq.ft
 Slab Count: {selected_record['slab_count']}
-Material & Fab: ${costs['material_and_fab']:,.2f}
+Material & Fabrication: ${costs['material_and_fab']:,.2f}
 Installation: ${costs['install_cost']:,.2f}
 IB: ${costs['ib_cost']:,.2f}
 Subtotal (before tax): ${sub_total:,.2f}

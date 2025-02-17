@@ -14,13 +14,13 @@ EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
-MARKUP_FACTOR = 1.15            
-INSTALL_COST_PER_SQFT = 23      
-FABRICATION_COST_PER_SQFT = 23  
-ADDITIONAL_IB_RATE = 0          
-GST_RATE = 0.05                 
+MARKUP_FACTOR = 1.15           
+INSTALL_COST_PER_SQFT = 23     
+FABRICATION_COST_PER_SQFT = 23 
+ADDITIONAL_IB_RATE = 0         
+GST_RATE = 0.05                
 
-# --- Google Sheets URL ---
+# --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 )
@@ -89,14 +89,14 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# --- Filters ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
+# --- Filters for Slab Selection ---
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -145,7 +145,7 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- The entire quote form is inside an expander labeled "Request a Quote"
+# Use an expander for "Request a Quote" so it collapses by default, matching the style of "View Subtotal & GST"
 with st.expander("Request a Quote", expanded=False):
     st.write("Fill in your contact information below and we'll get in touch with you.")
     
@@ -163,9 +163,8 @@ with st.expander("Request a Quote", expanded=False):
         
         submit_request = st.form_submit_button("Submit Request")
 
-# Check if the user submitted the form
 if submit_request:
-    # Validate required fields: Name, Email, City
+    # Validate required fields: Name, Email, and City
     if not name.strip() or not email.strip() or not city.strip():
         st.error("Name, Email, and City are required fields.")
     else:

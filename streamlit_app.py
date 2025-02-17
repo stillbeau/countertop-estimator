@@ -7,9 +7,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
-EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          
+SMTP_PORT = int(st.secrets["SMTP_PORT"])         
+EMAIL_USER = st.secrets["EMAIL_USER"]            
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -64,13 +64,12 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,     # before tax
+        "total_cost": total_cost,  # before tax
         "ib_cost": ib_total_cost
     }
 
 def send_email(subject, body):
     msg = MIMEMultipart()
-    # Set the "From" header to your verified sender email.
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
@@ -111,7 +110,6 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
-# "Full Name" is the combination of Brand and Color.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
@@ -120,10 +118,11 @@ col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    # The Google search query uses only the selected_full_name and the term "countertop"
+    # Create a dynamic Google search query using only the brand + color
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"<a href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
+    # Display as a markdown link (should appear as clickable text)
+    st.write(f"[🔎 Google Image Search]({search_url})")
 
 st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
@@ -133,8 +132,14 @@ if selected_slab_df.empty:
     st.stop()
 selected_slab = selected_slab_df.iloc[0]
 
-# --- Number Input for Square Footage as Whole Number ---
-sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1, value=20, step=1)
+# --- Number Input for Square Footage (whole number, no decimal) ---
+sq_ft_needed = st.number_input(
+    "Enter Square Footage Needed", 
+    min_value=1, 
+    value=20, 
+    step=1, 
+    format="%d"  # Ensures no decimal places are displayed
+)
 
 # --- Calculate Costs ---
 costs = calculate_costs(selected_slab, sq_ft_needed)

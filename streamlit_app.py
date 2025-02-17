@@ -7,18 +7,18 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
-EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]      # "srZ7GL6acMXVUwk4"
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
-MARKUP_FACTOR = 1.15            # 15% markup on material cost
-INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
-FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
-ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
-GST_RATE = 0.05                 # 5% GST
+MARKUP_FACTOR = 1.15            
+INSTALL_COST_PER_SQFT = 23      
+FABRICATION_COST_PER_SQFT = 23  
+ADDITIONAL_IB_RATE = 0          
+GST_RATE = 0.05               
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -34,7 +34,9 @@ def load_data():
             return None
         df = pd.read_csv(io.StringIO(response.text))
         df.columns = df.columns.str.strip()
-        df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
+        df["Serialized On Hand Cost"] = (
+            df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
+        )
         df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors="coerce")
         df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors="coerce").fillna(0).astype(int)
         return df
@@ -42,17 +44,17 @@ def load_data():
         st.error(f"❌ Failed to load data: {e}")
         return None
 
-def calculate_aggregated_costs(record, sq_ft_needed):
-    # record["unit_cost"] is the maximum unit cost among slabs for that color
-    unit_cost = record["unit_cost"]
-    material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_needed
+def calculate_costs(slab, sq_ft_needed):
+    available_sq_ft = slab["Available Sq Ft"]
+    material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
     material_and_fab = material_cost_with_markup + fabrication_total
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    total_cost = material_and_fab + install_cost
-    ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+    total_cost = material_and_fab + install_cost  # before tax
+    ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
     return {
-        "available_sq_ft": record["Available Sq Ft"],
+        "available_sq_ft": available_sq_ft,
+        "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
         "total_cost": total_cost,
@@ -61,6 +63,7 @@ def calculate_aggregated_costs(record, sq_ft_needed):
 
 def send_email(subject, body):
     msg = MIMEMultipart()
+    # Set the "From" header to your verified custom sender email.
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
@@ -87,14 +90,14 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# --- Basic Filters ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
+# --- Filters for Slab Selection ---
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=1)
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -102,147 +105,110 @@ if df_filtered.empty:
 
 df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
+selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-# --- Square Footage Input ---
-sq_ft_needed = st.number_input(
-    "Enter Square Footage Needed", 
-    min_value=1, 
-    value=20, 
-    step=1, 
-    format="%d",
-    help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
-)
+# --- Edge Profile Section ---
+st.markdown("### Edge Profiles")
+# Display profile images using HTML
+html_profiles = """
+<div style="display: flex; justify-content: space-around; align-items: center;">
+  <a href="https://ibb.co/V0Yy3v1T" target="_blank">
+    <img src="https://i.ibb.co/V0Yy3v1T/Eased-Edge-400x219.jpg" alt="Eased Edge" style="max-width: 120px;">
+  </a>
+  <a href="https://ibb.co/234CYG07" target="_blank">
+    <img src="https://i.ibb.co/234CYG07/Full-Bullnose-Edge-400x219.jpg" alt="Full Bullnose" style="max-width: 120px;">
+  </a>
+  <a href="https://ibb.co/Fk2M6RJG" target="_blank">
+    <img src="https://i.ibb.co/Fk2M6RJG/Half-Bullnose-Edge-400x219.jpg" alt="Half Bullnose" style="max-width: 120px;">
+  </a>
+  <a href="https://ibb.co/Fqfc2zZG" target="_blank">
+    <img src="https://i.ibb.co/Fqfc2zZG/Ogee-Edge-400x219.jpg" alt="Ogee" style="max-width: 120px;">
+  </a>
+  <a href="https://ibb.co/ksq9hXjv" target="_blank">
+    <img src="https://i.ibb.co/ksq9hXjv/Quarter-Round-Edge-400x219.jpg" alt="Quarter Round" style="max-width: 120px;">
+  </a>
+</div>
+"""
+st.markdown(html_profiles, unsafe_allow_html=True)
+# Use a selectbox to choose the profile
+profile_options = ["Eased Edge", "Full Bullnose", "Half Bullnose", "Ogee", "Quarter Round"]
+selected_edge_profile = st.selectbox("Select Edge Profile", options=profile_options)
 
-# --- Aggregate by Color ---
-df_filtered["unit_cost"] = df_filtered["Serialized On Hand Cost"] / df_filtered["Available Sq Ft"]
-df_agg = df_filtered.groupby("Full Name").agg({
-    "Available Sq Ft": "sum",
-    "unit_cost": "max",
-    "Serial Number": "count"
-}).reset_index()
-df_agg.rename(columns={"Serial Number": "slab_count"}, inplace=True)
+st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
-# --- Filter Out Colors Without Enough Material ---
-required_material = sq_ft_needed * 1.2
-df_agg = df_agg[df_agg["Available Sq Ft"] >= required_material]
-if df_agg.empty:
-    st.error("No colors have enough total material for the selected square footage.")
+selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
+if selected_slab_df.empty:
+    st.error("Selected slab not found. Please choose a different option.")
     st.stop()
+selected_slab = selected_slab_df.iloc[0]
 
-# --- Compute Final Price for Each Aggregated Record ---
-def compute_final_price(row):
-    cost_info = calculate_aggregated_costs(row, sq_ft_needed)
-    total = cost_info["total_cost"]
-    final = total + total * GST_RATE
-    return final
+sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1.0, value=20.0, step=1.0)
 
-df_agg["final_price"] = df_agg.apply(lambda row: compute_final_price(row), axis=1)
+# --- Calculate Costs ---
+costs = calculate_costs(selected_slab, sq_ft_needed)
+if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
+    st.error("⚠️ Not enough material available! Consider selecting another slab.")
 
-# --- Set Slider with Dynamic Minimum ---
-# Filter out any rows where final_price is zero or less
-df_valid = df_agg[df_agg["final_price"] > 0]
-if df_valid.empty:
-    st.error("No valid slab prices available.")
-    st.stop()
-min_possible_cost = int(df_valid["final_price"].min())
-max_possible_cost = int(df_valid["final_price"].max())
-
-max_job_cost = st.slider(
-    "Select Maximum Job Cost ($)",
-    min_value=min_possible_cost,
-    max_value=max_possible_cost,
-    value=max_possible_cost // 2
-)
-st.write("Selected Maximum Job Cost: $", max_job_cost)
-
-df_agg_filtered = df_agg[df_agg["final_price"] <= max_job_cost]
-if df_agg_filtered.empty:
-    st.error("No colors available within the selected cost range.")
-    st.stop()
-
-# --- Slab Color Selection from Aggregated Options ---
-selected_full_name = st.selectbox("Select Color", options=df_agg_filtered["Full Name"].unique())
-
-# --- Edge Profile and Links ---
-col1, col2 = st.columns([2,1])
-with col1:
-    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
-with col2:
-    google_search_query = f"{selected_full_name} countertop"
-    search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"[🔎 Google Image Search]({search_url})")
-st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
-
-# --- Retrieve the Aggregated Record for the Selected Color ---
-selected_record = df_agg_filtered[df_agg_filtered["Full Name"] == selected_full_name]
-if selected_record.empty:
-    st.error("Selected color not found. Please choose a different option.")
-    st.stop()
-selected_record = selected_record.iloc[0]
-
-# --- Calculate Costs for the Aggregated Record ---
-costs = calculate_aggregated_costs(selected_record, sq_ft_needed)
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
 
+# --- Display Final Price (Green Text) ---
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
+
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Disclaimer if Multiple Slabs Are Used ---
-if selected_record["slab_count"] > 1:
-    st.info("Note: Multiple slabs are being used for this color; available square footage has been aggregated, and colors may vary.")
+with st.expander("View Full Cost Breakdown (password required)"):
+    pwd = st.text_input("Enter password to view breakdown:", type="password")
+    if pwd:
+        if pwd == "sam":
+            st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
+            st.write(f"**Serial Number:** {costs['serial_number']}")
+            st.write(f"**Material & Fab:** ${costs['material_and_fab']:,.2f}")
+            st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
+            st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
+            st.write(f"**Total (before tax):** ${sub_total:,.2f}")
+            st.write(f"**Edge Profile Selected:** {selected_edge_profile}")
+        else:
+            st.error("Incorrect password.")
 
-# --- Request a Quote Form (Always Visible) ---
+# --- Customer Contact Form ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
+
 with st.form("customer_form"):
-    name = st.text_input("Name *")
-    email = st.text_input("Email *")
-    phone = st.text_input("Phone *")
+    name = st.text_input("Name")
     address = st.text_area("Address")
-    city = st.text_input("City *")
+    email = st.text_input("Email")
+    phone = st.text_input("Phone Number")
+    city = st.text_input("City")
     postal_code = st.text_input("Postal Code")
-    sales_person = st.text_input("Sales Person")
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    if not name.strip() or not email.strip() or not phone.strip() or not city.strip():
-        st.error("Name, Email, Phone, and City are required fields.")
-    else:
-        breakdown_info = f"""
+    breakdown_info = f"""
 Countertop Cost Estimator Details:
---------------------------------------------------
-Slab: {selected_record['Full Name']}
-Edge Profile: {selected_edge_profile}
-Square Footage: {sq_ft_needed}
-Slab Sq Ft (Aggregated): {selected_record['Available Sq Ft']:.2f} sq.ft
-Slab Count: {selected_record['slab_count']}
-Material & Fab: ${costs['material_and_fab']:,.2f}
-Installation: ${costs['install_cost']:,.2f}
-IB: ${costs['ib_cost']:,.2f}
-Subtotal (before tax): ${sub_total:,.2f}
-GST (5%): ${gst_amount:,.2f}
-Final Price: ${final_price:,.2f}
---------------------------------------------------
+- Slab: {selected_full_name}
+- Edge Profile: {selected_edge_profile}
+- Square Footage: {sq_ft_needed}
+- Subtotal (before tax): ${sub_total:,.2f}
+- GST (5%): ${gst_amount:,.2f}
+- Final Price: ${final_price:,.2f}
 """
-        customer_info = f"""
+    customer_info = f"""
 Customer Information:
---------------------------------------------------
-Name: {name}
-Email: {email}
-Phone: {phone}
-Address: {address}
-City: {city}
-Postal Code: {postal_code}
-Sales Person: {sales_person}
---------------------------------------------------
+- Name: {name}
+- Address: {address}
+- Email: {email}
+- Phone: {phone}
+- City: {city}
+- Postal Code: {postal_code}
 """
-        email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
-        subject = f"New Countertop Request from {name}"
-        if send_email(subject, email_body):
-            st.success("Your request has been submitted successfully! We will contact you soon.")
-        else:
-            st.error("Failed to send email. Please try again later.")
+    email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
+    subject = f"New Countertop Request from {name}"
+    if send_email(subject, email_body):
+        st.success("Your request has been submitted successfully! We will contact you soon.")
+    else:
+        st.error("Failed to send email. Please try again later.")

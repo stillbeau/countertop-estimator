@@ -109,32 +109,87 @@ selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name
 
 # --- Edge Profile Section ---
 st.markdown("### Edge Profiles")
-# Display profile images using HTML
-html_profiles = """
-<div style="display: flex; justify-content: space-around; align-items: center;">
-  <a href="https://ibb.co/V0Yy3v1T" target="_blank">
-    <img src="https://i.ibb.co/V0Yy3v1T/Eased-Edge-400x219.jpg" alt="Eased Edge" style="max-width: 120px;">
-  </a>
-  <a href="https://ibb.co/234CYG07" target="_blank">
-    <img src="https://i.ibb.co/234CYG07/Full-Bullnose-Edge-400x219.jpg" alt="Full Bullnose" style="max-width: 120px;">
-  </a>
-  <a href="https://ibb.co/Fk2M6RJG" target="_blank">
-    <img src="https://i.ibb.co/Fk2M6RJG/Half-Bullnose-Edge-400x219.jpg" alt="Half Bullnose" style="max-width: 120px;">
-  </a>
-  <a href="https://ibb.co/Fqfc2zZG" target="_blank">
-    <img src="https://i.ibb.co/Fqfc2zZG/Ogee-Edge-400x219.jpg" alt="Ogee" style="max-width: 120px;">
-  </a>
-  <a href="https://ibb.co/ksq9hXjv" target="_blank">
-    <img src="https://i.ibb.co/ksq9hXjv/Quarter-Round-Edge-400x219.jpg" alt="Quarter Round" style="max-width: 120px;">
-  </a>
-</div>
-"""
-st.markdown(html_profiles, unsafe_allow_html=True)
-# Use a selectbox to choose the profile
-profile_options = ["Eased Edge", "Full Bullnose", "Half Bullnose", "Ogee", "Quarter Round"]
+
+# Create 5 columns side by side
+col1, col2, col3, col4, col5 = st.columns(5)
+
+with col1:
+    st.markdown(
+        """
+        <a href="https://ibb.co/V0Yy3v1T" target="_blank">
+            <img src="https://i.ibb.co/V0Yy3v1T/Eased-Edge-400x219.jpg"
+                 alt="Eased Edge"
+                 style="width:100%; border-radius:4px;">
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+    # You can add a small caption below the image if you like:
+    # st.write("Eased Edge")
+
+with col2:
+    st.markdown(
+        """
+        <a href="https://ibb.co/234CYG07" target="_blank">
+            <img src="https://i.ibb.co/234CYG07/Full-Bullnose-Edge-400x219.jpg"
+                 alt="Full Bullnose"
+                 style="width:100%; border-radius:4px;">
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+
+with col3:
+    st.markdown(
+        """
+        <a href="https://ibb.co/Fk2M6RJG" target="_blank">
+            <img src="https://i.ibb.co/Fk2M6RJG/Half-Bullnose-Edge-400x219.jpg"
+                 alt="Half Bullnose"
+                 style="width:100%; border-radius:4px;">
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+
+with col4:
+    st.markdown(
+        """
+        <a href="https://ibb.co/Fqfc2zZG" target="_blank">
+            <img src="https://i.ibb.co/Fqfc2zZG/Ogee-Edge-400x219.jpg"
+                 alt="Ogee Edge"
+                 style="width:100%; border-radius:4px;">
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+
+with col5:
+    st.markdown(
+        """
+        <a href="https://ibb.co/ksq9hXjv" target="_blank">
+            <img src="https://i.ibb.co/ksq9hXjv/Quarter-Round-Edge-400x219.jpg"
+                 alt="Quarter Round"
+                 style="width:100%; border-radius:4px;">
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Let users pick the profile in a selectbox below the images
+profile_options = [
+    "Eased Edge",
+    "Full Bullnose",
+    "Half Bullnose",
+    "Ogee",
+    "Quarter Round"
+]
 selected_edge_profile = st.selectbox("Select Edge Profile", options=profile_options)
 
-st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
+st.write(
+    "For more details on edge profiles, visit "
+    "[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)"
+)
+
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:

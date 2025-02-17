@@ -6,30 +6,10 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- Inject CSS for styled links ---
-st.markdown("""
-<style>
-.styled-link {
-    display: inline-block;
-    padding: 0.4em 0.8em;
-    margin-right: 0.5em;
-    background-color: #2C3E50;
-    color: #ECF0F1 !important;
-    text-decoration: none;
-    border-radius: 5px;
-    font-weight: 600;
-    font-size: 0.9rem;
-}
-.styled-link:hover {
-    background-color: #34495E;
-}
-</style>
-""", unsafe_allow_html=True)
-
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])         # e.g., 587
-EMAIL_USER = st.secrets["EMAIL_USER"]            # e.g., "85e00d001@smtp-brevo.com"
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -84,7 +64,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -131,6 +111,7 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
+# "Full Name" contains the slab brand and color
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
@@ -139,21 +120,13 @@ col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    # Build a search query using brand & color
+    # Build a search query using only the slab's brand and color (selected_full_name)
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    # Styled link for the search button
-    st.markdown(
-        f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>",
-        unsafe_allow_html=True
-    )
+    st.markdown(f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
 
-# Another styled link for Floform Edge Profiles (placed below the columns)
-st.markdown(
-    "<a class='styled-link' href='https://floform.com/countertops/edge-profiles/' target='_blank'>"
-    "Floform Edge Profiles</a>",
-    unsafe_allow_html=True
-)
+# Additional styled link for Floform Edge Profiles
+st.markdown(f"<a class='styled-link' href='https://floform.com/countertops/edge-profiles/' target='_blank'>Floform Edge Profiles</a>", unsafe_allow_html=True)
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:
@@ -162,13 +135,7 @@ if selected_slab_df.empty:
 selected_slab = selected_slab_df.iloc[0]
 
 # --- Number Input for Square Footage (whole number, no decimal) ---
-sq_ft_needed = st.number_input(
-    "Enter Square Footage Needed", 
-    min_value=1, 
-    value=20, 
-    step=1, 
-    format="%d"  # No decimal places
-)
+sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1, value=20, step=1, format="%d")
 
 # --- Calculate Costs ---
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -200,33 +167,29 @@ with st.form("customer_form"):
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Build full breakdown details for the email (not shown in the UI)
+    # Build full breakdown details for the email (this breakdown will not show on the UI)
     breakdown_info = f"""
 Countertop Cost Estimator Details:
---------------------------------------------------
-- Slab: {selected_full_name}
-- Edge Profile: {selected_edge_profile}
-- Square Footage: {sq_ft_needed}
-- Slab Sq Ft: {costs['available_sq_ft']:.2f} sq.ft
-- Serial Number: {costs['serial_number']}
-- Material & Fab: ${costs['material_and_fab']:,.2f}
-- Installation: ${costs['install_cost']:,.2f}
-- IB: ${costs['ib_cost']:,.2f}
-- Subtotal (before tax): ${sub_total:,.2f}
-- GST (5%): ${gst_amount:,.2f}
-- Final Price: ${final_price:,.2f}
---------------------------------------------------
+Slab: {selected_full_name}
+Edge Profile: {selected_edge_profile}
+Square Footage: {sq_ft_needed}
+Slab Sq Ft: {costs['available_sq_ft']:.2f} sq.ft
+Serial Number: {costs['serial_number']}
+Material & Fab: ${costs['material_and_fab']:,.2f}
+Installation: ${costs['install_cost']:,.2f}
+IB: ${costs['ib_cost']:,.2f}
+Subtotal (before tax): ${sub_total:,.2f}
+GST (5%): ${gst_amount:,.2f}
+Final Price: ${final_price:,.2f}
 """
     customer_info = f"""
 Customer Information:
---------------------------------------------------
-- Name: {name}
-- Email: {email}
-- Phone: {phone}
-- Address: {address}
-- City: {city}
-- Postal Code: {postal_code}
---------------------------------------------------
+Name: {name}
+Email: {email}
+Phone: {phone}
+Address: {address}
+City: {city}
+Postal Code: {postal_code}
 """
     email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
     subject = f"New Countertop Request from {name}"

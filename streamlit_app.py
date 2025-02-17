@@ -7,9 +7,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
-EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -64,7 +64,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -112,7 +112,7 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
-# "Full Name" contains brand and color.
+# "Full Name" is the combination of Brand and Color.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
@@ -121,6 +121,7 @@ col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
+    # Build a search query using only the brand and color
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
     st.markdown(f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
@@ -159,25 +160,21 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Customer Contact Form ---
-st.markdown("## Request a Quote")
-st.write("Fill in your contact information below and we'll get in touch with you.")
-
-# Initialize submit_request to ensure it exists outside the form block.
-submit_request = False
-
-with st.form("customer_form"):
-    name = st.text_input("Name")
-    email = st.text_input("Email")
-    phone = st.text_input("Phone Number")
-    address = st.text_area("Address")
-    city = st.text_input("City")
-    postal_code = st.text_input("Postal Code")
-    sales_person = st.text_input("Sales Person")
-    submit_request = st.form_submit_button("Submit Request")
+# --- Customer Contact Form inside an Expander ---
+with st.expander("Request a Quote"):
+    st.write("Fill in your contact information below and we'll get in touch with you.")
+    with st.form("customer_form"):
+        name = st.text_input("Name")
+        email = st.text_input("Email")
+        phone = st.text_input("Phone Number")
+        address = st.text_area("Address")
+        city = st.text_input("City")
+        postal_code = st.text_input("Postal Code")
+        sales_person = st.text_input("Sales Person")
+        submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Validate required fields: Name, Email, City must not be empty
+    # Validate required fields: Name, Email, and City must not be empty (after stripping whitespace)
     if not name.strip() or not email.strip() or not city.strip():
         st.error("Name, Email, and City are required fields.")
     else:

@@ -44,7 +44,7 @@ def load_data():
         return None
 
 def calculate_aggregated_costs(record, sq_ft_used):
-    # record["unit_cost"] is the maximum unit cost among slabs for that color
+    # record["unit_cost"] is the maximum unit cost among the aggregated slabs for that color
     unit_cost = record["unit_cost"]
     material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
@@ -88,11 +88,16 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# --- Remove location and thickness filters ---
-# Map location codes to supplier names
+# --- Thickness Selector (Location selector removed) ---
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
+df_inventory = df_inventory[df_inventory["Thickness"] == thickness]
+if df_inventory.empty:
+    st.warning("No slabs match the selected thickness. Please adjust your filter.")
+    st.stop()
+
+# --- Map Supplier (from Location) and Create Combined Identifier ---
 supplier_mapping = {"VER": "Vernon", "ABB": "Abbotsford"}
 df_inventory["Supplier"] = df_inventory["Location"].map(supplier_mapping)
-# Create a combined identifier for the slab (Brand - Color)
 df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
 
 # --- Square Footage Input ---
@@ -104,18 +109,19 @@ sq_ft_input = st.number_input(
     format="%d",
     help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
 )
-# Enforce the minimum square footage
+# Enforce the minimum square footage for quoting
 if sq_ft_input < MINIMUM_SQ_FT:
     sq_ft_used = MINIMUM_SQ_FT
     st.info(f"Minimum square footage is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} sq ft for pricing.")
 else:
     sq_ft_used = sq_ft_input
 
-# --- Aggregate Data by Full Name and Supplier ---
+# --- Aggregate Data by Slab (Full Name) and Supplier ---
+# Calculate unit cost for each record
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg({
     "Available Sq Ft": "sum",
-    "unit_cost": "max",
+    "unit_cost": "max",      # Use the highest unit cost among the grouped slabs
     "Serial Number": "count"
 }).reset_index()
 df_agg.rename(columns={"Serial Number": "slab_count"}, inplace=True)
@@ -131,12 +137,12 @@ if df_agg.empty:
 def compute_final_price(row):
     cost_info = calculate_aggregated_costs(row, sq_ft_used)
     total = cost_info["total_cost"]
-    final = total + total * GST_RATE
+    final = total + (total * GST_RATE)
     return final
 
 df_agg["final_price"] = df_agg.apply(compute_final_price, axis=1)
 
-# --- Slider for Maximum Job Cost with Default Set to Maximum ---
+# --- Slider for Maximum Job Cost (default set to maximum) ---
 df_valid = df_agg[df_agg["final_price"] > 0]
 if df_valid.empty:
     st.error("No valid slab prices available.")
@@ -158,10 +164,10 @@ if df_agg_filtered.empty:
     st.error("No colors available within the selected cost range.")
     st.stop()
 
-# --- Slab Color Selection from Aggregated Options ---
+# --- Slab Selection ---
 selected_full_name = st.selectbox("Select Color", options=df_agg_filtered["Full Name"].unique())
 
-# --- Edge Profile and Links ---
+# --- Edge Profile and Helpful Links ---
 col1, col2 = st.columns([2, 1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
@@ -178,7 +184,7 @@ if selected_record.empty:
     st.stop()
 selected_record = selected_record.iloc[0]
 
-# --- Calculate Costs for the Aggregated Record ---
+# --- Calculate Costs for the Selected Record ---
 costs = calculate_aggregated_costs(selected_record, sq_ft_used)
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
@@ -214,8 +220,9 @@ if submit_request:
 Countertop Cost Estimator Details:
 --------------------------------------------------
 Slab: {selected_record['Full Name']}
-Supplier: {selected_record['Supplier']}
+Supplied by: {selected_record['Supplier']}
 Edge Profile: {selected_edge_profile}
+Thickness: {thickness}
 Square Footage (used): {sq_ft_used}
 Slab Sq Ft (Aggregated): {selected_record['Available Sq Ft']:.2f} sq.ft
 Slab Count: {selected_record['slab_count']}

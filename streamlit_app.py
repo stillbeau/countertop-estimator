@@ -8,9 +8,9 @@ from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
-EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]      # "srZ7GL6acMXVUwk4"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])         # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]            # "85e00d001@smtp-brevo.com"
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]    # "srZ7GL6acMXVUwk4"
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
@@ -18,7 +18,7 @@ MARKUP_FACTOR = 1.15
 INSTALL_COST_PER_SQFT = 23      
 FABRICATION_COST_PER_SQFT = 23  
 ADDITIONAL_IB_RATE = 0          
-GST_RATE = 0.05               
+GST_RATE = 0.05                 
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -107,72 +107,8 @@ df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
+# --- Edge Profile Section (No Images) ---
 st.markdown("### Edge Profiles")
-
-# Create 5 columns side by side
-col1, col2, col3, col4, col5 = st.columns(5)
-
-with col1:
-    st.markdown(
-        """
-        <a href="https://ibb.co/V0Yy3v1T" target="_blank">
-            <img src="https://i.ibb.co/V0Yy3v1T/Eased-Edge-400x219.jpg"
-                 alt="Eased Edge"
-                 style="width:100%; height:auto; object-fit:contain; border-radius:4px;">
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col2:
-    st.markdown(
-        """
-        <a href="https://ibb.co/234CYG07" target="_blank">
-            <img src="https://i.ibb.co/234CYG07/Full-Bullnose-Edge-400x219.jpg"
-                 alt="Full Bullnose"
-                 style="width:100%; height:auto; object-fit:contain; border-radius:4px;">
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col3:
-    st.markdown(
-        """
-        <a href="https://ibb.co/Fk2M6RJG" target="_blank">
-            <img src="https://i.ibb.co/Fk2M6RJG/Half-Bullnose-Edge-400x219.jpg"
-                 alt="Half Bullnose"
-                 style="width:100%; height:auto; object-fit:contain; border-radius:4px;">
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col4:
-    st.markdown(
-        """
-        <a href="https://ibb.co/Fqfc2zZG" target="_blank">
-            <img src="https://i.ibb.co/Fqfc2zZG/Ogee-Edge-400x219.jpg"
-                 alt="Ogee"
-                 style="width:100%; height:auto; object-fit:contain; border-radius:4px;">
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col5:
-    st.markdown(
-        """
-        <a href="https://ibb.co/ksq9hXjv" target="_blank">
-            <img src="https://i.ibb.co/ksq9hXjv/Quarter-Round-Edge-400x219.jpg"
-                 alt="Quarter Round"
-                 style="width:100%; height:auto; object-fit:contain; border-radius:4px;">
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
-
-# Selectbox for the profile choice
 profile_options = [
     "Eased Edge",
     "Full Bullnose",
@@ -181,13 +117,10 @@ profile_options = [
     "Quarter Round"
 ]
 selected_edge_profile = st.selectbox("Select Edge Profile", options=profile_options)
-
 st.write(
     "For more details on edge profiles, visit "
     "[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)"
 )
-
-
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:

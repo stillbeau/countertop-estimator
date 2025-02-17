@@ -46,6 +46,7 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
+    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
     material_and_fab = material_cost_with_markup + fabrication_total
@@ -57,7 +58,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,
+        "total_cost": total_cost,  # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -77,6 +78,16 @@ def send_email(subject, body):
     except Exception as e:
         st.error(f"Failed to send email: {e}")
         return False
+
+# --- CSS for basic slider styling (static demonstration) ---
+st.markdown("""
+    <style>
+    /* Example CSS for slider background (this is static and may need adjustment) */
+    div[data-baseweb="slider"] > div {
+        background: linear-gradient(to right, #ddd 0%, #2ecc71 20%, #2ecc71 80%, #ddd 80%);
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
 # --- UI: Title & Subtitle ---
 st.title("Countertop Cost Estimator")
@@ -113,7 +124,7 @@ with col2:
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
     st.markdown(f"[🔎 Google Image Search]({search_url})")
-    
+
 st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
@@ -128,7 +139,7 @@ sq_ft_needed = st.number_input(
     value=20, 
     step=1, 
     format="%d",
-    help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144 to calculate the square footage."
+    help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144."
 )
 
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -145,9 +156,16 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
+# --- Range Slider for Job Range (Optional) ---
+# Set the maximum based on the slab's available sq ft, if possible.
+max_range = int(costs["available_sq_ft"]) if costs["available_sq_ft"] else 100
+job_range = st.slider("Select Desired Job Range (sq ft)", min_value=1, max_value=max_range, value=(20, max_range//2))
+st.write("Selected Job Range:", job_range)
+
 # --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
+
 with st.form("customer_form"):
     name = st.text_input("Name *")
     email = st.text_input("Email *")
@@ -159,7 +177,6 @@ with st.form("customer_form"):
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Validate required fields: Name, Email, Phone, City must not be empty
     if not name.strip() or not email.strip() or not phone.strip() or not city.strip():
         st.error("Name, Email, Phone, and City are required fields.")
     else:

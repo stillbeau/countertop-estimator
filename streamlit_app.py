@@ -7,9 +7,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
-EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -98,13 +98,14 @@ if df_inventory is None:
     st.stop()
 
 # --- Filters for Slab Selection ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=1)
+# Set default thickness to "3cm" by selecting the third option in the list.
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -120,7 +121,7 @@ col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    # Build a search query using only the brand and color
+    # Build a search query using only the brand and color (selected_full_name)
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
     st.markdown(f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
@@ -134,7 +135,14 @@ if selected_slab_df.empty:
 selected_slab = selected_slab_df.iloc[0]
 
 # --- Number Input for Square Footage (whole number, no decimal) ---
-sq_ft_needed = st.number_input("Enter Square Footage Needed", min_value=1, value=20, step=1, format="%d")
+sq_ft_needed = st.number_input(
+    "Enter Square Footage Needed", 
+    min_value=1, 
+    value=20, 
+    step=1, 
+    format="%d",
+    help="Measure the front edge and depth (in inches) of your countertop, multiply these two numbers, and then divide by 144 to calculate the square footage."
+)
 
 # --- Calculate Costs ---
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -163,12 +171,16 @@ with st.form("customer_form"):
     address = st.text_area("Address")
     city = st.text_input("City")
     postal_code = st.text_input("Postal Code")
-    sales_person = st.text_input("Sales Person")  # Moved to bottom of the form
+    sales_person = st.text_input("Sales Person")
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Build full breakdown details for the email (not shown in the UI)
-    breakdown_info = f"""
+    # Validate required fields: Name, Email, City
+    if not name or not email or not city:
+        st.error("Name, Email, and City are required fields.")
+    else:
+        # Build full breakdown details for the email (not shown in the UI)
+        breakdown_info = f"""
 Countertop Cost Estimator Details:
 --------------------------------------------------
 Slab: {selected_full_name}
@@ -184,7 +196,7 @@ GST (5%): ${gst_amount:,.2f}
 Final Price: ${final_price:,.2f}
 --------------------------------------------------
 """
-    customer_info = f"""
+        customer_info = f"""
 Customer Information:
 --------------------------------------------------
 Name: {name}
@@ -196,10 +208,10 @@ Postal Code: {postal_code}
 Sales Person: {sales_person}
 --------------------------------------------------
 """
-    email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
-    subject = f"New Countertop Request from {name}"
-    if send_email(subject, email_body):
-        st.success("Your request has been submitted successfully! We will contact you soon.")
-        st.experimental_rerun()  # Clear the form by re-running the app
-    else:
-        st.error("Failed to send email. Please try again later.")
+        email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"
+        subject = f"New Countertop Request from {name}"
+        if send_email(subject, email_body):
+            st.success("Your request has been submitted successfully! We will contact you soon.")
+            st.experimental_rerun()  # Clear the form by re-running the app
+        else:
+            st.error("Failed to send email. Please try again later.")

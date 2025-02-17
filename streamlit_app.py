@@ -48,17 +48,23 @@ def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
     # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
+    # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
+    # Material & Fab total
     material_and_fab = material_cost_with_markup + fabrication_total
+    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
+    # Total (before tax)
     total_cost = material_and_fab + install_cost
+    # IB Calculation: base material (without markup) + fabrication cost + any additional rate
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -91,13 +97,13 @@ if df_inventory is None:
     st.stop()
 
 # --- Filters for Slab Selection ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Defaults to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Defaults to 3cm
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -114,7 +120,7 @@ with col2:
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
     st.markdown(f"[🔎 Google Image Search]({search_url})")
-
+    
 st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
@@ -129,7 +135,7 @@ sq_ft_needed = st.number_input(
     value=20, 
     step=1, 
     format="%d",
-    help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144 to calculate the square footage."
+    help="Measure the front edge and depth (in inches) of your countertop, multiply them together, and divide by 144 to calculate the square footage."
 )
 
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -146,7 +152,7 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Request a Quote (Form displayed by default) ---
+# --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
 
@@ -161,7 +167,7 @@ with st.form("customer_form"):
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Validate required fields: Name, Email, and City
+    # Validate required fields: Name, Email, and City must not be empty
     if not name.strip() or not email.strip() or not city.strip():
         st.error("Name, Email, and City are required fields.")
     else:
@@ -197,6 +203,5 @@ Sales Person: {sales_person}
         subject = f"New Countertop Request from {name}"
         if send_email(subject, email_body):
             st.success("Your request has been submitted successfully! We will contact you soon.")
-            st.experimental_rerun()  # Clear the form
         else:
             st.error("Failed to send email. Please try again later.")

@@ -46,25 +46,18 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
-    # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
-    # Material & Fab total
     material_and_fab = material_cost_with_markup + fabrication_total
-    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    # Total (before tax)
     total_cost = material_and_fab + install_cost
-    # IB Calculation: base material (without markup) + fabrication cost + any additional rate
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
-
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,     # before tax
+        "total_cost": total_cost,
         "ib_cost": ib_total_cost
     }
 
@@ -97,13 +90,13 @@ if df_inventory is None:
     st.stop()
 
 # --- Filters for Slab Selection ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Defaults to VER
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Defaults to 3cm
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -135,7 +128,7 @@ sq_ft_needed = st.number_input(
     value=20, 
     step=1, 
     format="%d",
-    help="Measure the front edge and depth (in inches) of your countertop, multiply them together, and divide by 144 to calculate the square footage."
+    help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144 to calculate the square footage."
 )
 
 costs = calculate_costs(selected_slab, sq_ft_needed)
@@ -155,21 +148,20 @@ with st.expander("View Subtotal & GST"):
 # --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
-
 with st.form("customer_form"):
-    name = st.text_input("Name")
-    email = st.text_input("Email")
-    phone = st.text_input("Phone Number")
+    name = st.text_input("Name *")
+    email = st.text_input("Email *")
+    phone = st.text_input("Phone *")
     address = st.text_area("Address")
-    city = st.text_input("City")
+    city = st.text_input("City *")
     postal_code = st.text_input("Postal Code")
     sales_person = st.text_input("Sales Person")
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Validate required fields: Name, Email, and City must not be empty
-    if not name.strip() or not email.strip() or not city.strip():
-        st.error("Name, Email, and City are required fields.")
+    # Validate required fields: Name, Email, Phone, City must not be empty
+    if not name.strip() or not email.strip() or not phone.strip() or not city.strip():
+        st.error("Name, Email, Phone, and City are required fields.")
     else:
         breakdown_info = f"""
 Countertop Cost Estimator Details:

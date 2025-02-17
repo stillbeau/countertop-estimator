@@ -43,7 +43,7 @@ def load_data():
         return None
 
 def calculate_aggregated_costs(record, sq_ft_needed):
-    # Use the maximum unit cost among slabs of the same color.
+    # record["unit_cost"] is the maximum unit cost among slabs for that color
     unit_cost = record["unit_cost"]
     material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
@@ -87,7 +87,7 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
-# --- Filters for Slab Selection ---
+# --- Basic Filters ---
 location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
@@ -100,7 +100,6 @@ if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
-# Create a "Full Name" column (Brand - Color)
 df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 
@@ -114,11 +113,8 @@ sq_ft_needed = st.number_input(
     help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
 )
 
-# --- Group by Color First (Aggregate Multiple Slabs) ---
-# Compute unit cost for each slab
+# --- Aggregate by Color ---
 df_filtered["unit_cost"] = df_filtered["Serialized On Hand Cost"] / df_filtered["Available Sq Ft"]
-
-# Aggregate by "Full Name": sum Available Sq Ft, take max unit_cost, count slabs
 df_agg = df_filtered.groupby("Full Name").agg({
     "Available Sq Ft": "sum",
     "unit_cost": "max",
@@ -142,9 +138,15 @@ def compute_final_price(row):
 
 df_agg["final_price"] = df_agg.apply(lambda row: compute_final_price(row), axis=1)
 
-# --- Maximum Job Cost Slider using Dynamic Minimum ---
-min_possible_cost = int(df_agg["final_price"].min())
-max_possible_cost = int(df_agg["final_price"].max())
+# --- Set Slider with Dynamic Minimum ---
+# Filter out any rows where final_price is zero or less
+df_valid = df_agg[df_agg["final_price"] > 0]
+if df_valid.empty:
+    st.error("No valid slab prices available.")
+    st.stop()
+min_possible_cost = int(df_valid["final_price"].min())
+max_possible_cost = int(df_valid["final_price"].max())
+
 max_job_cost = st.slider(
     "Select Maximum Job Cost ($)",
     min_value=min_possible_cost,
@@ -153,7 +155,6 @@ max_job_cost = st.slider(
 )
 st.write("Selected Maximum Job Cost: $", max_job_cost)
 
-# --- Filter Aggregated Data Based on the Slider ---
 df_agg_filtered = df_agg[df_agg["final_price"] <= max_job_cost]
 if df_agg_filtered.empty:
     st.error("No colors available within the selected cost range.")
@@ -172,7 +173,7 @@ with col2:
     st.markdown(f"[🔎 Google Image Search]({search_url})")
 st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 
-# --- Retrieve Aggregated Record for Selected Color ---
+# --- Retrieve the Aggregated Record for the Selected Color ---
 selected_record = df_agg_filtered[df_agg_filtered["Full Name"] == selected_full_name]
 if selected_record.empty:
     st.error("Selected color not found. Please choose a different option.")
@@ -190,7 +191,7 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Disclaimer for Multiple Slabs ---
+# --- Disclaimer if Multiple Slabs Are Used ---
 if selected_record["slab_count"] > 1:
     st.info("Note: Multiple slabs are being used for this color; available square footage has been aggregated, and colors may vary.")
 

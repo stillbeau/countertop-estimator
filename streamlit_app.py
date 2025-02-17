@@ -58,7 +58,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,  # before tax
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -78,16 +78,6 @@ def send_email(subject, body):
     except Exception as e:
         st.error(f"Failed to send email: {e}")
         return False
-
-# --- CSS for basic slider styling (static demonstration) ---
-st.markdown("""
-    <style>
-    /* Example CSS for slider background (this is static and may need adjustment) */
-    div[data-baseweb="slider"] > div {
-        background: linear-gradient(to right, #ddd 0%, #2ecc71 20%, #2ecc71 80%, #ddd 80%);
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
 # --- UI: Title & Subtitle ---
 st.title("Countertop Cost Estimator")
@@ -114,25 +104,10 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
+# Create a new column "Full Name" that combines Brand and Color.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
-selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-col1, col2 = st.columns([2,1])
-with col1:
-    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
-with col2:
-    google_search_query = f"{selected_full_name} countertop"
-    search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"[🔎 Google Image Search]({search_url})")
-
-st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
-
-selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
-if selected_slab_df.empty:
-    st.error("Selected slab not found. Please choose a different option.")
-    st.stop()
-selected_slab = selected_slab_df.iloc[0]
-
+# --- Square Footage Input ---
 sq_ft_needed = st.number_input(
     "Enter Square Footage Needed", 
     min_value=1, 
@@ -142,6 +117,46 @@ sq_ft_needed = st.number_input(
     help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144."
 )
 
+# --- Minimum and Maximum Job Cost Inputs ---
+min_job_cost = st.number_input("Enter Minimum Job Cost ($)", min_value=0, value=0, step=10)
+max_job_cost = st.number_input("Enter Maximum Job Cost ($)", min_value=0, value=10000, step=10)
+
+# --- Filter Available Slabs Based on Cost ---
+# Compute the final price for each slab in df_filtered based on the provided square footage.
+def compute_final_price(row):
+    cost_info = calculate_costs(row, sq_ft_needed)
+    total = cost_info["total_cost"]
+    final = total + total * GST_RATE
+    return final
+
+df_filtered["final_price"] = df_filtered.apply(lambda row: compute_final_price(row), axis=1)
+
+# Filter the DataFrame based on the min and max job cost
+df_cost_filtered = df_filtered[(df_filtered["final_price"] >= min_job_cost) & (df_filtered["final_price"] <= max_job_cost)]
+if df_cost_filtered.empty:
+    st.error("No slabs available within the selected cost range.")
+    st.stop()
+
+# --- Slab Color Selection from Filtered Options ---
+selected_full_name = st.selectbox("Select Color", options=df_cost_filtered["Full Name"].unique())
+
+# --- Edge Profile and Links ---
+col1, col2 = st.columns([2,1])
+with col1:
+    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
+with col2:
+    google_search_query = f"{selected_full_name} countertop"
+    search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
+    st.markdown(f"[🔎 Google Image Search]({search_url})")
+st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
+
+selected_slab_df = df_cost_filtered[df_cost_filtered["Full Name"] == selected_full_name]
+if selected_slab_df.empty:
+    st.error("Selected slab not found. Please choose a different option.")
+    st.stop()
+selected_slab = selected_slab_df.iloc[0]
+
+# --- Calculate Costs for Selected Slab ---
 costs = calculate_costs(selected_slab, sq_ft_needed)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
     st.error("⚠️ Not enough material available! Consider selecting another slab.")
@@ -155,12 +170,6 @@ st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
-
-# --- Range Slider for Job Range (Optional) ---
-# Set the maximum based on the slab's available sq ft, if possible.
-max_range = int(costs["available_sq_ft"]) if costs["available_sq_ft"] else 100
-job_range = st.slider("Select Desired Job Range (sq ft)", min_value=1, max_value=max_range, value=(20, max_range//2))
-st.write("Selected Job Range:", job_range)
 
 # --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")

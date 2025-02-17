@@ -14,11 +14,11 @@ EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
-MARKUP_FACTOR = 1.15            # 15% markup on material cost
-INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
-FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
-ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
-GST_RATE = 0.05                 # 5% GST
+MARKUP_FACTOR = 1.15            
+INSTALL_COST_PER_SQFT = 23      
+FABRICATION_COST_PER_SQFT = 23  
+ADDITIONAL_IB_RATE = 0          
+GST_RATE = 0.05                
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -46,7 +46,6 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
-    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
     material_and_fab = material_cost_with_markup + fabrication_total
@@ -58,7 +57,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,     # before tax
+        "total_cost": total_cost,  
         "ib_cost": ib_total_cost
     }
 
@@ -91,13 +90,13 @@ if df_inventory is None:
     st.stop()
 
 # --- Filters for Slab Selection ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -116,7 +115,13 @@ sq_ft_needed = st.number_input(
     help="Measure the front edge and depth (in inches) of your countertop, multiply them, and divide by 144."
 )
 
-# --- Compute Final Price for Each Slab for Filtering ---
+# --- Filter Out Slabs Without Enough Material ---
+df_filtered = df_filtered[df_filtered["Available Sq Ft"] >= (sq_ft_needed * 1.2)]
+if df_filtered.empty:
+    st.error("No slabs have enough material for the selected square footage.")
+    st.stop()
+
+# --- Compute Final Price for Each Slab for Further Filtering (if needed) ---
 def compute_final_price(row):
     cost_info = calculate_costs(row, sq_ft_needed)
     total = cost_info["total_cost"]
@@ -130,7 +135,7 @@ max_possible_cost = int(df_filtered["final_price"].max())
 max_job_cost = st.slider("Select Maximum Job Cost ($)", min_value=0, max_value=max_possible_cost, value=max_possible_cost//2)
 st.write("Selected Maximum Job Cost: $", max_job_cost)
 
-# --- Filter slabs based on cost ---
+# --- Filter slabs based on the selected maximum job cost ---
 df_cost_filtered = df_filtered[df_filtered["final_price"] <= max_job_cost]
 if df_cost_filtered.empty:
     st.error("No slabs available within the selected cost range.")
@@ -139,7 +144,7 @@ if df_cost_filtered.empty:
 # --- Slab Color Selection from Filtered Options ---
 selected_full_name = st.selectbox("Select Color", options=df_cost_filtered["Full Name"].unique())
 
-# --- Edge Profile and Google Search Link in Columns ---
+# --- Edge Profile and Links ---
 col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
@@ -158,7 +163,8 @@ selected_slab = selected_slab_df.iloc[0]
 # --- Calculate Costs for Selected Slab ---
 costs = calculate_costs(selected_slab, sq_ft_needed)
 if sq_ft_needed * 1.2 > costs["available_sq_ft"]:
-    st.error("⚠️ Not enough material available! Consider selecting another slab.")
+    st.error("⚠️ Not enough material available for this slab! Consider selecting another option.")
+    st.stop()
 
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
@@ -173,6 +179,7 @@ with st.expander("View Subtotal & GST"):
 # --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
+
 with st.form("customer_form"):
     name = st.text_input("Name *")
     email = st.text_input("Email *")

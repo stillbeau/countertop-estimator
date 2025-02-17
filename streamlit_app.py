@@ -8,17 +8,17 @@ from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])         # 587
-EMAIL_USER = st.secrets["EMAIL_USER"]            # "85e00d001@smtp-brevo.com"
-EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]    # "srZ7GL6acMXVUwk4"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
+EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]      # Your Brevo API key
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
 # --- Other Configurations ---
-MARKUP_FACTOR = 1.15            
-INSTALL_COST_PER_SQFT = 23      
-FABRICATION_COST_PER_SQFT = 23  
-ADDITIONAL_IB_RATE = 0          
-GST_RATE = 0.05                 
+MARKUP_FACTOR = 1.15            # 15% markup on material cost
+INSTALL_COST_PER_SQFT = 23      # Installation cost per square foot
+FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
+ADDITIONAL_IB_RATE = 0          # Extra rate added to material in IB calculation (per sq.ft)
+GST_RATE = 0.05                 # 5% GST
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -46,18 +46,25 @@ def load_data():
 
 def calculate_costs(slab, sq_ft_needed):
     available_sq_ft = slab["Available Sq Ft"]
+    # Material cost with markup (without fabrication)
     material_cost_with_markup = (slab["Serialized On Hand Cost"] * MARKUP_FACTOR / available_sq_ft) * sq_ft_needed
+    # Fabrication cost
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_needed
+    # Material & Fab total
     material_and_fab = material_cost_with_markup + fabrication_total
+    # Installation cost
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_needed
-    total_cost = material_and_fab + install_cost  # before tax
+    # Total (before tax)
+    total_cost = material_and_fab + install_cost
+    # IB Calculation: base material (without markup) + fabrication cost + any additional rate
     ib_total_cost = ((slab["Serialized On Hand Cost"] / available_sq_ft) + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_needed
+
     return {
         "available_sq_ft": available_sq_ft,
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,
+        "total_cost": total_cost,     # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -107,7 +114,7 @@ df_filtered = df_filtered.copy()
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
-# --- Edge Profile Section (No Images) ---
+# --- Edge Profile Section (without images) ---
 st.markdown("### Edge Profiles")
 profile_options = [
     "Eased Edge",
@@ -145,20 +152,6 @@ st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
-
-with st.expander("View Full Cost Breakdown (password required)"):
-    pwd = st.text_input("Enter password to view breakdown:", type="password")
-    if pwd:
-        if pwd == "sam":
-            st.write(f"**Slab Sq Ft:** {costs['available_sq_ft']:.2f} sq.ft")
-            st.write(f"**Serial Number:** {costs['serial_number']}")
-            st.write(f"**Material & Fab:** ${costs['material_and_fab']:,.2f}")
-            st.write(f"**Installation:** ${costs['install_cost']:,.2f}")
-            st.write(f"**IB:** ${costs['ib_cost']:,.2f}")
-            st.write(f"**Total (before tax):** ${sub_total:,.2f}")
-            st.write(f"**Edge Profile Selected:** {selected_edge_profile}")
-        else:
-            st.error("Incorrect password.")
 
 # --- Customer Contact Form ---
 st.markdown("## Request a Quote")

@@ -64,7 +64,7 @@ def calculate_costs(slab, sq_ft_needed):
         "serial_number": slab["Serial Number"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
-        "total_cost": total_cost,     # before tax
+        "total_cost": total_cost,  # before tax
         "ib_cost": ib_total_cost
     }
 
@@ -98,13 +98,13 @@ if df_inventory is None:
     st.stop()
 
 # --- Filters for Slab Selection ---
-location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Default to VER
+location = st.selectbox("Select Location", options=["VER", "ABB"], index=0)  # Defaults to VER
 df_filtered = df_inventory[df_inventory["Location"] == location]
 if df_filtered.empty:
     st.warning("No slabs found for the selected location.")
     st.stop()
 
-# Set default thickness to "3cm" by selecting the third option in the list.
+# Default to "3cm" thickness (assuming the options are ["1.2cm", "2cm", "3cm"])
 thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
 df_filtered = df_filtered[df_filtered["Thickness"] == thickness]
 if df_filtered.empty:
@@ -112,7 +112,7 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
-# "Full Name" contains brand and color.
+# "Full Name" is the combination of Brand and Color.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
@@ -141,7 +141,7 @@ sq_ft_needed = st.number_input(
     value=20, 
     step=1, 
     format="%d",
-    help="Measure the front edge and depth (in inches) of your countertop, multiply these two numbers, and then divide by 144 to calculate the square footage."
+    help="Measure the front edge and depth (in inches) of your countertop, multiply them together, and then divide by 144 to calculate the square footage."
 )
 
 # --- Calculate Costs ---
@@ -175,11 +175,10 @@ with st.form("customer_form"):
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
-    # Validate required fields: Name, Email, City
-    if not name or not email or not city:
+    # Validate required fields: Name, Email, City must not be empty (after stripping spaces)
+    if not name.strip() or not email.strip() or not city.strip():
         st.error("Name, Email, and City are required fields.")
     else:
-        # Build full breakdown details for the email (not shown in the UI)
         breakdown_info = f"""
 Countertop Cost Estimator Details:
 --------------------------------------------------

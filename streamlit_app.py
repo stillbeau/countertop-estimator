@@ -150,7 +150,7 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
 # --- Request a Quote Expander with Form ---
-with st.expander("Request a Quote", expanded=False):
+with st.expander("Request a Quote"):
     st.write("Fill in your contact information below and we'll get in touch with you.")
     with st.form("customer_form"):
         name = st.text_input("Name")

@@ -6,10 +6,30 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# --- Inject CSS for styled links ---
+st.markdown("""
+<style>
+.styled-link {
+    display: inline-block;
+    padding: 0.4em 0.8em;
+    margin-right: 0.5em;
+    background-color: #2C3E50;
+    color: #ECF0F1 !important;
+    text-decoration: none;
+    border-radius: 5px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.styled-link:hover {
+    background-color: #34495E;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          
-SMTP_PORT = int(st.secrets["SMTP_PORT"])         
-EMAIL_USER = st.secrets["EMAIL_USER"]            
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])         # e.g., 587
+EMAIL_USER = st.secrets["EMAIL_USER"]            # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -70,6 +90,7 @@ def calculate_costs(slab, sq_ft_needed):
 
 def send_email(subject, body):
     msg = MIMEMultipart()
+    # Set the "From" header to your verified sender email.
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
     msg["To"] = RECIPIENT_EMAIL
     msg["Subject"] = subject
@@ -116,15 +137,23 @@ selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name
 # --- Edge Profile and Google Search Link in Columns ---
 col1, col2 = st.columns([2,1])
 with col1:
-    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
+    selected_edge_profile = st.selectbox("Select Edge Profile", ["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    # Create a dynamic Google search query using only the brand + color
+    # Build a search query using brand & color
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    # Display as a markdown link (should appear as clickable text)
-    st.write(f"[🔎 Google Image Search]({search_url})")
+    # Styled link for the search button
+    st.markdown(
+        f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>",
+        unsafe_allow_html=True
+    )
 
-st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
+# Another styled link for Floform Edge Profiles (placed below the columns)
+st.markdown(
+    "<a class='styled-link' href='https://floform.com/countertops/edge-profiles/' target='_blank'>"
+    "Floform Edge Profiles</a>",
+    unsafe_allow_html=True
+)
 
 selected_slab_df = df_filtered[df_filtered["Full Name"] == selected_full_name]
 if selected_slab_df.empty:
@@ -138,7 +167,7 @@ sq_ft_needed = st.number_input(
     min_value=1, 
     value=20, 
     step=1, 
-    format="%d"  # Ensures no decimal places are displayed
+    format="%d"  # No decimal places
 )
 
 # --- Calculate Costs ---

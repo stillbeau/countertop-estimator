@@ -7,9 +7,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Email Configuration using st.secrets ---
-SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
-SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
-EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
+SMTP_SERVER = st.secrets["SMTP_SERVER"]          # "smtp-relay.brevo.com"
+SMTP_PORT = int(st.secrets["SMTP_PORT"])           # 587
+EMAIL_USER = st.secrets["EMAIL_USER"]              # "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
 
@@ -120,7 +120,7 @@ col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    # Build a search query using only the brand and color (selected_full_name)
+    # Build a search query using only the brand and color
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
     st.markdown(f"<a class='styled-link' href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
@@ -160,10 +160,10 @@ with st.form("customer_form"):
     name = st.text_input("Name")
     email = st.text_input("Email")
     phone = st.text_input("Phone Number")
-    sales_person = st.text_input("Sales Person")  # New Sales Person field
     address = st.text_area("Address")
     city = st.text_input("City")
     postal_code = st.text_input("Postal Code")
+    sales_person = st.text_input("Sales Person")  # Moved to bottom of the form
     submit_request = st.form_submit_button("Submit Request")
 
 if submit_request:
@@ -171,29 +171,29 @@ if submit_request:
     breakdown_info = f"""
 Countertop Cost Estimator Details:
 --------------------------------------------------
-- Slab: {selected_full_name}
-- Edge Profile: {selected_edge_profile}
-- Square Footage: {sq_ft_needed}
-- Slab Sq Ft: {costs['available_sq_ft']:.2f} sq.ft
-- Serial Number: {costs['serial_number']}
-- Material & Fab: ${costs['material_and_fab']:,.2f}
-- Installation: ${costs['install_cost']:,.2f}
-- IB: ${costs['ib_cost']:,.2f}
-- Subtotal (before tax): ${sub_total:,.2f}
-- GST (5%): ${gst_amount:,.2f}
-- Final Price: ${final_price:,.2f}
+Slab: {selected_full_name}
+Edge Profile: {selected_edge_profile}
+Square Footage: {sq_ft_needed}
+Slab Sq Ft: {costs['available_sq_ft']:.2f} sq.ft
+Serial Number: {costs['serial_number']}
+Material & Fab: ${costs['material_and_fab']:,.2f}
+Installation: ${costs['install_cost']:,.2f}
+IB: ${costs['ib_cost']:,.2f}
+Subtotal (before tax): ${sub_total:,.2f}
+GST (5%): ${gst_amount:,.2f}
+Final Price: ${final_price:,.2f}
 --------------------------------------------------
 """
     customer_info = f"""
 Customer Information:
 --------------------------------------------------
-- Name: {name}
-- Email: {email}
-- Phone: {phone}
-- Sales Person: {sales_person}    <!-- New Sales Person info -->
-- Address: {address}
-- City: {city}
-- Postal Code: {postal_code}
+Name: {name}
+Email: {email}
+Phone: {phone}
+Address: {address}
+City: {city}
+Postal Code: {postal_code}
+Sales Person: {sales_person}
 --------------------------------------------------
 """
     email_body = f"New Countertop Request:\n\n{customer_info}\n\n{breakdown_info}"

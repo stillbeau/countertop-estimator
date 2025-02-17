@@ -111,7 +111,7 @@ if df_filtered.empty:
     st.stop()
 
 df_filtered = df_filtered.copy()
-# "Full Name" contains brand and color only.
+# "Full Name" is the combination of Brand and Color.
 df_filtered["Full Name"] = df_filtered["Brand"] + " - " + df_filtered["Color"]
 selected_full_name = st.selectbox("Select Color", options=df_filtered["Full Name"].unique())
 
@@ -120,10 +120,10 @@ col1, col2 = st.columns([2,1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    # Google search query uses only the brand and color, not the edge profile.
+    # The Google search query uses only the selected_full_name and the term "countertop"
     google_search_query = f"{selected_full_name} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"[🔎 Google Image Search]({search_url})")
+    st.markdown(f"<a href='{search_url}' target='_blank'>🔎 Google Image Search</a>", unsafe_allow_html=True)
 
 st.write("For more details on edge profiles, visit [Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
 

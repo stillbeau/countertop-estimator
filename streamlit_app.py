@@ -100,6 +100,9 @@ supplier_mapping = {"VER": "Vernon", "ABB": "Abbotsford"}
 df_inventory["Supplier"] = df_inventory["Location"].map(supplier_mapping)
 df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
 
+# *** Compute Unit Cost ***
+df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
+
 # --- Square Footage Input ---
 sq_ft_input = st.number_input(
     "Enter Square Footage Needed", 

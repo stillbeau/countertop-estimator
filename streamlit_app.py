@@ -164,25 +164,23 @@ if df_agg_filtered.empty:
     st.error("No colors available within the selected cost range.")
     st.stop()
 
-# --- Slab Selection ---
-selected_full_name = st.selectbox("Select Color", options=df_agg_filtered["Full Name"].unique())
+# --- Slab Selection with Price per Square Foot in Dropdown ---
+records = df_agg_filtered.to_dict("records")
+selected_record = st.selectbox(
+    "Select Color",
+    options=records,
+    format_func=lambda record: f"{record['Full Name']} (${record['final_price'] / sq_ft_used:.2f}/sq ft)"
+)
 
 # --- Edge Profile and Helpful Links ---
 col1, col2 = st.columns([2, 1])
 with col1:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
 with col2:
-    google_search_query = f"{selected_full_name} countertop"
+    google_search_query = f"{selected_record['Full Name']} countertop"
     search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
     st.markdown(f"[🔎 Google Image Search]({search_url})")
 st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
-
-# --- Retrieve the Aggregated Record for the Selected Color ---
-selected_record = df_agg_filtered[df_agg_filtered["Full Name"] == selected_full_name]
-if selected_record.empty:
-    st.error("Selected color not found. Please choose a different option.")
-    st.stop()
-selected_record = selected_record.iloc[0]
 
 # --- Calculate Costs for the Selected Record ---
 costs = calculate_aggregated_costs(selected_record, sq_ft_used)

@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 30            # Minimum square footage for quoting
-MARKUP_FACTOR = 1.15          # 15% markup on material cost
+MARKUP_FACTOR = 1.25          # 15% markup on material cost
 INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)

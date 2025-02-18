@@ -53,7 +53,7 @@ def calculate_aggregated_costs(record, sq_ft_used):
     total_cost = material_and_fab + install_cost
     ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used
     return {
-        "available_sq_ft": record["Available Sq Ft"],
+        "available_sq_ft": record["available_sq_ft"],
         "material_and_fab": material_and_fab,
         "install_cost": install_cost,
         "total_cost": total_cost,
@@ -117,18 +117,17 @@ else:
     sq_ft_used = sq_ft_input
 
 # --- Aggregate Data by Slab (Full Name) and Supplier ---
-# Calculate unit cost for each record
-df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
-df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg({
-    "Available Sq Ft": "sum",
-    "unit_cost": "max",      # Use the highest unit cost among the grouped slabs
-    "Serial Number": "count"
-}).reset_index()
-df_agg.rename(columns={"Serial Number": "slab_count"}, inplace=True)
+# Using named aggregation to sum available sq ft, get max unit_cost, count slabs, and join serial numbers.
+df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg(
+    available_sq_ft=("Available Sq Ft", "sum"),
+    unit_cost=("unit_cost", "max"),
+    slab_count=("Serial Number", "count"),
+    serial_numbers=("Serial Number", lambda x: ", ".join(x.astype(str)))
+).reset_index()
 
 # --- Filter Out Options Without Enough Material ---
 required_material = sq_ft_used * 1.2
-df_agg = df_agg[df_agg["Available Sq Ft"] >= required_material]
+df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
 if df_agg.empty:
     st.error("No colors have enough total material for the selected square footage.")
     st.stop()
@@ -201,8 +200,9 @@ with st.expander("View Detailed Breakdown"):
     st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
     st.markdown(f"- **Thickness:** {thickness}")
     st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
-    st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['Available Sq Ft']:.2f} sq.ft")
+    st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['available_sq_ft']:.2f} sq.ft")
     st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
+    st.markdown(f"- **Serial Numbers:** {selected_record['serial_numbers']}")
     st.markdown(f"- **Material & Fabrication:** ${costs['material_and_fab']:,.2f}")
     st.markdown(f"- **Installation:** ${costs['install_cost']:,.2f}")
     st.markdown(f"- **IB:** ${costs['ib_cost']:,.2f}")
@@ -242,8 +242,9 @@ Supplied by: {selected_record['Supplier']}
 Edge Profile: {selected_edge_profile}
 Thickness: {thickness}
 Square Footage (used): {sq_ft_used}
-Slab Sq Ft (Aggregated): {selected_record['Available Sq Ft']:.2f} sq.ft
+Slab Sq Ft (Aggregated): {selected_record['available_sq_ft']:.2f} sq.ft
 Slab Count: {selected_record['slab_count']}
+Serial Numbers: {selected_record['serial_numbers']}
 Material & Fabrication: ${costs['material_and_fab']:,.2f}
 Installation: ${costs['install_cost']:,.2f}
 IB: ${costs['ib_cost']:,.2f}

@@ -192,23 +192,27 @@ with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Display Detailed Breakdown in an Additional Expander ---
-with st.expander("View Detailed Breakdown"):
-    st.markdown("**Cost Breakdown Details:**")
-    st.markdown(f"- **Slab:** {selected_record['Full Name']}")
-    st.markdown(f"- **Supplied by:** {selected_record['Supplier']}")
-    st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
-    st.markdown(f"- **Thickness:** {thickness}")
-    st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
-    st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['available_sq_ft']:.2f} sq.ft")
-    st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
-    st.markdown(f"- **Serial Numbers:** {selected_record['serial_numbers']}")
-    st.markdown(f"- **Material & Fabrication:** ${costs['material_and_fab']:,.2f}")
-    st.markdown(f"- **Installation:** ${costs['install_cost']:,.2f}")
-    st.markdown(f"- **IB:** ${costs['ib_cost']:,.2f}")
-    st.markdown(f"- **Subtotal (before tax):** ${sub_total:,.2f}")
-    st.markdown(f"- **GST (5%):** ${gst_amount:,.2f}")
-    st.markdown(f"- **Final Price:** ${final_price:,.2f}")
+# --- Password Protected Detailed Breakdown ---
+pwd = st.text_input("Enter password to view detailed breakdown", type="password")
+if pwd == "sam":
+    with st.expander("View Detailed Breakdown"):
+        st.markdown("**Cost Breakdown Details:**")
+        st.markdown(f"- **Slab:** {selected_record['Full Name']}")
+        st.markdown(f"- **Supplied by:** {selected_record['Supplier']}")
+        st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
+        st.markdown(f"- **Thickness:** {thickness}")
+        st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
+        st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['available_sq_ft']:.2f} sq.ft")
+        st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
+        st.markdown(f"- **Serial Numbers:** {selected_record['serial_numbers']}")
+        st.markdown(f"- **Material & Fabrication:** ${costs['material_and_fab']:,.2f}")
+        st.markdown(f"- **Installation:** ${costs['install_cost']:,.2f}")
+        st.markdown(f"- **IB:** ${costs['ib_cost']:,.2f}")
+        st.markdown(f"- **Subtotal (before tax):** ${sub_total:,.2f}")
+        st.markdown(f"- **GST (5%):** ${gst_amount:,.2f}")
+        st.markdown(f"- **Final Price:** ${final_price:,.2f}")
+else:
+    st.info("Enter password to view detailed breakdown.")
 
 # --- Display Final Price ---
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")

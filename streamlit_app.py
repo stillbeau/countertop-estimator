@@ -188,10 +188,30 @@ sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 final_price = sub_total + gst_amount
 
-st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
+# --- Display Subtotal & GST in an Expander ---
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
+
+# --- Display Detailed Breakdown in an Additional Expander ---
+with st.expander("View Detailed Breakdown"):
+    st.markdown("**Cost Breakdown Details:**")
+    st.markdown(f"- **Slab:** {selected_record['Full Name']}")
+    st.markdown(f"- **Supplied by:** {selected_record['Supplier']}")
+    st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
+    st.markdown(f"- **Thickness:** {thickness}")
+    st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
+    st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['Available Sq Ft']:.2f} sq.ft")
+    st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
+    st.markdown(f"- **Material & Fabrication:** ${costs['material_and_fab']:,.2f}")
+    st.markdown(f"- **Installation:** ${costs['install_cost']:,.2f}")
+    st.markdown(f"- **IB:** ${costs['ib_cost']:,.2f}")
+    st.markdown(f"- **Subtotal (before tax):** ${sub_total:,.2f}")
+    st.markdown(f"- **GST (5%):** ${gst_amount:,.2f}")
+    st.markdown(f"- **Final Price:** ${final_price:,.2f}")
+
+# --- Display Final Price ---
+st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 
 # --- Disclaimer if Multiple Slabs Are Used ---
 if selected_record["slab_count"] > 1:

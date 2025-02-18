@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 # --- Configurations ---
-MINIMUM_SQ_FT = 30            # Minimum square footage for quoting
+MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
 MARKUP_FACTOR = 1.25          # 15% markup on material cost
 INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
@@ -231,7 +231,7 @@ with st.form("customer_form"):
     name = st.text_input("Name *")
     email = st.text_input("Email *")
     phone = st.text_input("Phone *")
-    address = st.text_area("Address")
+    address = st.text_input("Address")
     city = st.text_input("City *")
     postal_code = st.text_input("Postal Code")
     sales_person = st.text_input("Sales Person")

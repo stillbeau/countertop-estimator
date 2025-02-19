@@ -171,12 +171,13 @@ records = df_agg_filtered.to_dict("records")
 selected_record = st.selectbox(
     "Select Color",
     options=records,
-    format_func=lambda record: (
-        f"{record['Full Name']} "
-        f"(Total: {record['available_sq_ft']:.0f} sq.ft, {record['slab_count']} slabs) "
-        f"- (${record['final_price'] / sq_ft_used:.2f}/sq ft)"
-    )
+    format_func=lambda record: f"{record['Full Name']} - (${record['final_price'] / sq_ft_used:.2f}/sq ft)"
 )
+
+# --- Display Additional Info Below the Selector ---
+st.markdown(f"**Total Available Sq Ft:** {selected_record['available_sq_ft']:.0f} sq.ft")
+st.markdown(f"**Number of Slabs:** {selected_record['slab_count']}")
+
 
 # --- Edge Profile and Helpful Links ---
 col1, col2 = st.columns([2, 1])

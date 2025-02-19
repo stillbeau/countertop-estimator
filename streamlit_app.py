@@ -8,11 +8,12 @@ from email.mime.multipart import MIMEMultipart
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
-MARKUP_FACTOR = 1.25          # 25% markup on material cost
+MARKUP_FACTOR = 1.25          # 25% markup on material cost (used in material cost calculation)
 INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05               # 5% GST
+FINAL_MARKUP_PERCENTAGE = 0.10  # 10% markup applied to final price (this does not affect IB)
 
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
@@ -194,7 +195,9 @@ selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profile
 costs = calculate_aggregated_costs(selected_record, sq_ft_used)
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
-final_price = sub_total + gst_amount
+base_final_price = sub_total + gst_amount
+# Apply additional final markup (this does not affect IB)
+final_price = base_final_price * (1 + FINAL_MARKUP_PERCENTAGE)
 
 # --- Display Subtotal & GST in an Expander ---
 with st.expander("View Subtotal & GST"):
@@ -214,7 +217,7 @@ st.write("Fill in your contact information below and we'll get in touch with you
 with st.form("customer_form"):
     name = st.text_input("Name *")
     email = st.text_input("Email *")
-    phone = st.text_input("Phone *")
+    phone = st.text_text("Phone *")  # Alternatively, st.text_input("Phone *") if you prefer
     address = st.text_input("Address")
     city = st.text_input("City *")
     postal_code = st.text_input("Postal Code")
@@ -241,7 +244,7 @@ Installation: ${costs['install_cost']:,.2f}
 IB: ${costs['ib_cost']:,.2f}
 Subtotal (before tax): ${sub_total:,.2f}
 GST (5%): ${gst_amount:,.2f}
-Final Price: ${final_price:,.2f}
+Final Price (with 10% markup): ${final_price:,.2f}
 --------------------------------------------------
 """
         customer_info = f"""

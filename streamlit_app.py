@@ -20,7 +20,7 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-# Updated to send email to both addresses.
+# Recipients: sends to both addresses
 RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com, athomas@floform.com")
 
 # --- Google Sheets URL for cost data ---
@@ -65,7 +65,7 @@ def calculate_aggregated_costs(record, sq_ft_used):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
-    # Split the recipient string on commas and join them
+    # Split and join recipients for proper formatting
     recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
     msg["To"] = ", ".join(recipient_emails)
     msg["Subject"] = subject
@@ -93,7 +93,7 @@ if df_inventory is None:
     st.stop()
 
 # --- Thickness Selector (Location selector removed) ---
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)  # Default to 3cm
+thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
 df_inventory = df_inventory[df_inventory["Thickness"] == thickness]
 if df_inventory.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -116,7 +116,6 @@ sq_ft_input = st.number_input(
     format="%d",
     help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
 )
-# Enforce the minimum square footage for quoting
 if sq_ft_input < MINIMUM_SQ_FT:
     sq_ft_used = MINIMUM_SQ_FT
     st.info(f"Minimum square footage is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} sq ft for pricing.")
@@ -131,23 +130,20 @@ df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg(
     serial_numbers=("Serial Number", lambda x: ", ".join(x.astype(str)))
 ).reset_index()
 
-# --- Filter Out Options Without Enough Material ---
 required_material = sq_ft_used * 1.2
 df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
 if df_agg.empty:
     st.error("No colors have enough total material for the selected square footage.")
     st.stop()
 
-# --- Compute Final Price for Each Aggregated Record ---
 def compute_final_price(row):
     cost_info = calculate_aggregated_costs(row, sq_ft_used)
     total = cost_info["total_cost"]
-    final = total + (total * GST_RATE)
-    return final
+    base_final = total + (total * GST_RATE)
+    return base_final
 
 df_agg["final_price"] = df_agg.apply(compute_final_price, axis=1)
 
-# --- Slider for Maximum Job Cost (default set to maximum) ---
 df_valid = df_agg[df_agg["final_price"] > 0]
 if df_valid.empty:
     st.error("No valid slab prices available.")
@@ -159,7 +155,7 @@ max_job_cost = st.slider(
     "Select Maximum Job Cost ($)",
     min_value=min_possible_cost,
     max_value=max_possible_cost,
-    value=max_possible_cost,  # default now set to maximum available cost
+    value=max_possible_cost,
     step=100
 )
 st.write("Selected Maximum Job Cost: $", max_job_cost)
@@ -169,7 +165,6 @@ if df_agg_filtered.empty:
     st.error("No colors available within the selected cost range.")
     st.stop()
 
-# --- Slab Selection with Price per Square Foot in Dropdown ---
 records = df_agg_filtered.to_dict("records")
 selected_record = st.selectbox(
     "Select Color",
@@ -177,47 +172,38 @@ selected_record = st.selectbox(
     format_func=lambda record: f"{record['Full Name']} - (${record['final_price'] / sq_ft_used:.2f}/sq ft)"
 )
 
-# --- Display Additional Info Below the Selector ---
 st.markdown(f"**Total Available Sq Ft:** {selected_record['available_sq_ft']:.0f} sq.ft")
 st.markdown(f"**Number of Slabs:** {selected_record['slab_count']}")
 
-# --- Google Image Search Link ---
 google_search_query = f"{selected_record['Full Name']} countertop"
 search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
 st.markdown(f"[🔎 Google Image Search]({search_url})")
 
-# --- Edge Profile Selection ---
 edge_profiles = ["Crescent", "Basin", "Boulder", "Volcanic", "Piedmont", "Summit", "Seacliff", "Alpine", "Treeline"]
 default_index = edge_profiles.index("Seacliff")
 selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles, index=default_index)
 
-# --- Calculate Costs for the Selected Record ---
 costs = calculate_aggregated_costs(selected_record, sq_ft_used)
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
 base_final_price = sub_total + gst_amount
-# Apply additional final markup (this does not affect IB)
 final_price = base_final_price * (1 + FINAL_MARKUP_PERCENTAGE)
 
-# --- Display Subtotal & GST in an Expander ---
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
 
-# --- Display Final Price ---
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 
-# --- Disclaimer if Multiple Slabs Are Used ---
 if selected_record["slab_count"] > 1:
     st.info("Note: Multiple slabs are being used for this color; available square footage has been aggregated, and colors may vary.")
 
-# --- Request a Quote Form (Always Visible) ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
 with st.form("customer_form"):
     name = st.text_input("Name *")
     email = st.text_input("Email *")
-    phone = st.text_text("Phone *")  # Alternatively, st.text_input("Phone *") if you prefer
+    phone = st.text_input("Phone *")
     address = st.text_input("Address")
     city = st.text_input("City *")
     postal_code = st.text_input("Postal Code")

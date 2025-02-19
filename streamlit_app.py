@@ -8,7 +8,7 @@ from email.mime.multipart import MIMEMultipart
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
-MARKUP_FACTOR = 1.25          # 15% markup on material cost
+MARKUP_FACTOR = 1.25          # 25% markup on material cost
 INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
@@ -19,7 +19,7 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sambeaumont@me.com")
+RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sbeaumont@floform.com")
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -107,7 +107,7 @@ df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_invento
 sq_ft_input = st.number_input(
     "Enter Square Footage Needed", 
     min_value=1, 
-    value=20, 
+    value=40, 
     step=1, 
     format="%d",
     help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
@@ -178,7 +178,6 @@ selected_record = st.selectbox(
 st.markdown(f"**Total Available Sq Ft:** {selected_record['available_sq_ft']:.0f} sq.ft")
 st.markdown(f"**Number of Slabs:** {selected_record['slab_count']}")
 
-
 # --- Edge Profile and Helpful Links ---
 col1, col2 = st.columns([2, 1])
 with col1:
@@ -199,28 +198,6 @@ final_price = sub_total + gst_amount
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
     st.markdown(f"**GST (5%):** ${gst_amount:,.2f}")
-
-# --- Password Protected Detailed Breakdown ---
-pwd = st.text_input("Enter password to view detailed breakdown", type="password")
-if pwd == "sam":
-    with st.expander("View Detailed Breakdown"):
-        st.markdown("**Cost Breakdown Details:**")
-        st.markdown(f"- **Slab:** {selected_record['Full Name']}")
-        st.markdown(f"- **Supplied by:** {selected_record['Supplier']}")
-        st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
-        st.markdown(f"- **Thickness:** {thickness}")
-        st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
-        st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['available_sq_ft']:.2f} sq.ft")
-        st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
-        st.markdown(f"- **Serial Numbers:** {selected_record['serial_numbers']}")
-        st.markdown(f"- **Material & Fabrication:** ${costs['material_and_fab']:,.2f}")
-        st.markdown(f"- **Installation:** ${costs['install_cost']:,.2f}")
-        st.markdown(f"- **IB:** ${costs['ib_cost']:,.2f}")
-        st.markdown(f"- **Subtotal (before tax):** ${sub_total:,.2f}")
-        st.markdown(f"- **GST (5%):** ${gst_amount:,.2f}")
-        st.markdown(f"- **Final Price:** ${final_price:,.2f}")
-else:
-    st.info("Enter password to view detailed breakdown.")
 
 # --- Display Final Price ---
 st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")

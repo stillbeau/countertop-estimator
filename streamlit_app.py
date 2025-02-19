@@ -19,7 +19,9 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-RECIPIENT_EMAIL = st.secrets.get("RECIPIENT_EMAIL", "sbeaumont@floform.com")
+# Updated to send email to both addresses.
+# In your secrets, you can either set RECIPIENT_EMAILS as a comma-separated string or a list.
+RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com, athomas@floform.com")
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -63,7 +65,9 @@ def calculate_aggregated_costs(record, sq_ft_used):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
-    msg["To"] = RECIPIENT_EMAIL
+    # Split the recipient string on commas and join them back to ensure proper formatting.
+    recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
+    msg["To"] = ", ".join(recipient_emails)
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     try:
@@ -120,7 +124,6 @@ else:
     sq_ft_used = sq_ft_input
 
 # --- Aggregate Data by Slab (Full Name) and Supplier ---
-# Using named aggregation to sum available sq ft, get max unit_cost, count slabs, and join serial numbers.
 df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg(
     available_sq_ft=("Available Sq Ft", "sum"),
     unit_cost=("unit_cost", "max"),

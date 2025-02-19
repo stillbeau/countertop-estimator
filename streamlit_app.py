@@ -20,7 +20,6 @@ SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 # Updated to send email to both addresses.
-# In your secrets, you can either set RECIPIENT_EMAILS as a comma-separated string or a list.
 RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com, athomas@floform.com")
 
 # --- Google Sheets URL for cost data ---
@@ -65,7 +64,7 @@ def calculate_aggregated_costs(record, sq_ft_used):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
-    # Split the recipient string on commas and join them back to ensure proper formatting.
+    # Split the recipient string on commas and join them
     recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
     msg["To"] = ", ".join(recipient_emails)
     msg["Subject"] = subject
@@ -181,15 +180,15 @@ selected_record = st.selectbox(
 st.markdown(f"**Total Available Sq Ft:** {selected_record['available_sq_ft']:.0f} sq.ft")
 st.markdown(f"**Number of Slabs:** {selected_record['slab_count']}")
 
-# --- Edge Profile and Helpful Links ---
-col1, col2 = st.columns([2, 1])
-with col1:
-    selected_edge_profile = st.selectbox("Select Edge Profile", options=["Bullnose", "Eased", "Beveled", "Ogee", "Waterfall"])
-with col2:
-    google_search_query = f"{selected_record['Full Name']} countertop"
-    search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
-    st.markdown(f"[🔎 Google Image Search]({search_url})")
-st.markdown("[Floform Edge Profiles](https://floform.com/countertops/edge-profiles/)")
+# --- Google Image Search Link ---
+google_search_query = f"{selected_record['Full Name']} countertop"
+search_url = f"https://www.google.com/search?q={google_search_query.replace(' ', '+')}"
+st.markdown(f"[🔎 Google Image Search]({search_url})")
+
+# --- Edge Profile Selection ---
+edge_profiles = ["Crescent", "Basin", "Boulder", "Volcanic", "Piedmont", "Summit", "Seacliff", "Alpine", "Treeline"]
+default_index = edge_profiles.index("Seacliff")
+selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles, index=default_index)
 
 # --- Calculate Costs for the Selected Record ---
 costs = calculate_aggregated_costs(selected_record, sq_ft_used)

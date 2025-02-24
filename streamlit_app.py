@@ -6,6 +6,22 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# --- Custom CSS for improved mobile readability ---
+st.markdown(
+    """
+    <style>
+    /* Reduce font size in select boxes and labels */
+    div[data-baseweb="select"] {
+        font-size: 0.8rem;
+    }
+    .stLabel, label {
+        font-size: 0.8rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
 MARKUP_FACTOR = 1.25          # 25% markup on material cost (used in material cost calculation)
@@ -20,8 +36,8 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-# Recipients: sends to both addresses (this may be defined as a string or a list in your secrets)
-RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com")
+# Recipients: sends to both addresses (if only one is provided, it will use that one)
+RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com, athomas@floform.com")
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -201,6 +217,28 @@ st.markdown(f"### Your Total Price: :green[${final_price:,.2f}]")
 if selected_record["slab_count"] > 1:
     st.info("Note: Multiple slabs are being used for this color; available square footage has been aggregated, and colors may vary.")
 
+# --- Password Protected Breakdown ---
+pwd = st.text_input("Enter password to view detailed breakdown", type="password")
+if pwd == "sam":
+    with st.expander("View Detailed Breakdown"):
+        st.markdown(f"- **Slab:** {selected_record['Full Name']}")
+        st.markdown(f"- **Supplier:** {selected_record['Supplier']}")
+        st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
+        st.markdown(f"- **Thickness:** {thickness}")
+        st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
+        st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['available_sq_ft']:.2f} sq.ft")
+        st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
+        st.markdown(f"- **Serial Numbers:** {selected_record['serial_numbers']}")
+        st.markdown(f"- **Material & Fabrication:** ${costs['material_and_fab']:,.2f}")
+        st.markdown(f"- **Installation:** ${costs['install_cost']:,.2f}")
+        st.markdown(f"- **IB:** ${costs['ib_cost']:,.2f}")
+        st.markdown(f"- **Subtotal (before tax):** ${sub_total:,.2f}")
+        st.markdown(f"- **GST (5%):** ${gst_amount:,.2f}")
+        st.markdown(f"- **Final Price (with 10% markup):** ${final_price:,.2f}")
+else:
+    st.info("Enter password to view detailed breakdown.")
+
+# --- Request a Quote Form ---
 st.markdown("## Request a Quote")
 st.write("Fill in your contact information below and we'll get in touch with you.")
 with st.form("customer_form"):

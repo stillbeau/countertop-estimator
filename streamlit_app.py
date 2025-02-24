@@ -6,23 +6,6 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- Custom CSS for improved mobile readability ---
-st.markdown(
-    """
-    <style>
-    /* Reduce font size in select boxes and labels */
-    div[data-baseweb="select"] {
-        font-size: 0.8rem;
-    }
-    .stLabel, label {
-        font-size: 0.8rem;
-    }
-    /* Optionally, adjust button sizes, inputs, etc. */
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
 MARKUP_FACTOR = 1.25          # 25% markup on material cost (used in material cost calculation)
@@ -37,7 +20,7 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-# Recipients: sends to both addresses (if only one provided in secrets, it will be that one)
+# Recipients: sends to both addresses (this may be defined as a string or a list in your secrets)
 RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com")
 
 # --- Google Sheets URL for cost data ---
@@ -82,8 +65,11 @@ def calculate_aggregated_costs(record, sq_ft_used):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
-    # Split and join recipients for proper formatting
-    recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
+    # If RECIPIENT_EMAILS is a string, split it; otherwise assume it's already a list.
+    if isinstance(RECIPIENT_EMAILS, str):
+        recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
+    else:
+        recipient_emails = RECIPIENT_EMAILS
     msg["To"] = ", ".join(recipient_emails)
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
@@ -182,15 +168,11 @@ if df_agg_filtered.empty:
     st.error("No colors available within the selected cost range.")
     st.stop()
 
-# --- Slab Selection with Truncated Text in Dropdown ---
 records = df_agg_filtered.to_dict("records")
 selected_record = st.selectbox(
     "Select Color",
     options=records,
-    format_func=lambda record: (
-        f"{record['Full Name'][:25]}{'...' if len(record['Full Name']) > 25 else ''} - "
-        f"(${record['final_price'] / sq_ft_used:.2f}/sq ft)"
-    )
+    format_func=lambda record: f"{record['Full Name']} - (${record['final_price'] / sq_ft_used:.2f}/sq ft)"
 )
 
 st.markdown(f"**Total Available Sq Ft:** {selected_record['available_sq_ft']:.0f} sq.ft")

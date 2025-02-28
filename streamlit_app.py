@@ -44,7 +44,6 @@ GOOGLE_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ/export?format=csv"
 )
 
-@st.cache_data
 def load_data():
     try:
         response = requests.get(GOOGLE_SHEET_URL)
@@ -62,7 +61,6 @@ def load_data():
         return None
 
 def calculate_aggregated_costs(record, sq_ft_used):
-    # record["unit_cost"] is the maximum unit cost among the aggregated slabs for that color
     unit_cost = record["unit_cost"]
     material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
@@ -81,7 +79,6 @@ def calculate_aggregated_costs(record, sq_ft_used):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg["From"] = "Sc countertops <sam@sccountertops.ca>"
-    # If RECIPIENT_EMAILS is a string, split it; otherwise assume it's already a list.
     if isinstance(RECIPIENT_EMAILS, str):
         recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
     else:
@@ -104,7 +101,7 @@ def send_email(subject, body):
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project")
 
-# --- Load Data ---
+# --- Load Data (no caching for real-time updates) ---
 with st.spinner("Loading data..."):
     df_inventory = load_data()
 if df_inventory is None:

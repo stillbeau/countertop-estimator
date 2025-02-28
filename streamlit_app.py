@@ -36,8 +36,8 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-# Recipients: sends to both addresses (if only one is provided, it will use that one)
-RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com, athomas@floform.com")
+# If you only want emails sent to sbeaumont@floform.com, set RECIPIENT_EMAILS accordingly.
+RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com")
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (
@@ -78,7 +78,9 @@ def calculate_aggregated_costs(record, sq_ft_used):
 
 def send_email(subject, body):
     msg = MIMEMultipart()
-    msg["From"] = "Sc countertops <sam@sccountertops.ca>"
+    # Use the authenticated email as the sender
+    msg["From"] = EMAIL_USER
+    # Process recipients (if a comma-separated string, split it into a list)
     if isinstance(RECIPIENT_EMAILS, str):
         recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
     else:
@@ -87,11 +89,10 @@ def send_email(subject, body):
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
     try:
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls()
-        server.login(EMAIL_USER, EMAIL_PASSWORD)
-        server.send_message(msg)
-        server.quit()
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
+            server.send_message(msg)
         return True
     except Exception as e:
         st.error(f"Failed to send email: {e}")
@@ -101,7 +102,7 @@ def send_email(subject, body):
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project")
 
-# --- Load Data (no caching for real-time updates) ---
+# --- Load Data (real-time, no caching) ---
 with st.spinner("Loading data..."):
     df_inventory = load_data()
 if df_inventory is None:

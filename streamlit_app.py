@@ -24,12 +24,12 @@ st.markdown(
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
-MARKUP_FACTOR = 1.25          # 25% markup on material cost (used in material cost calculation)
+MARKUP_FACTOR = 1          # 25% markup on material cost (used in material cost calculation)
 INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
-FABRICATION_COST_PER_SQFT = 23  # Fabrication cost per square foot
+FABRICATION_COST_PER_SQFT = 17  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05               # 5% GST
-FINAL_MARKUP_PERCENTAGE = 0.10  # 10% markup applied to final price (this does not affect IB)
+FINAL_MARKUP_PERCENTAGE = 0  # 10% markup applied to final price (this does not affect IB)
 
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"

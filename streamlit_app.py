@@ -24,8 +24,8 @@ st.markdown(
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
-MARKUP_FACTOR = 1          # 25% markup on material cost (used in material cost calculation)
-INSTALL_COST_PER_SQFT = 23    # Installation cost per square foot
+MARKUP_FACTOR = 1.15          # 25% markup on material cost (used in material cost calculation)
+INSTALL_COST_PER_SQFT = 20    # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 17  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05               # 5% GST
@@ -37,7 +37,7 @@ SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
 # If you only want emails sent to sbeaumont@floform.com, set RECIPIENT_EMAILS accordingly.
-RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sbeaumont@floform.com")
+RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sambeaumont@me.com")
 
 # --- Google Sheets URL for cost data ---
 GOOGLE_SHEET_URL = (

@@ -269,7 +269,7 @@ Installation: ${costs['install_cost']:,.2f}
 IB: ${costs['ib_cost']:,.2f}
 Subtotal (before tax): ${sub_total:,.2f}
 GST (5%): ${gst_amount:,.2f}
-Final Price (with 10% markup): ${final_price:,.2f}
+Final Price: ${final_price:,.2f}
 --------------------------------------------------
 """
         customer_info = f"""

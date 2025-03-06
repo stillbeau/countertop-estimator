@@ -24,9 +24,9 @@ st.markdown(
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 25            # Minimum square footage for quoting
-MARKUP_FACTOR = 1.05          # 25% markup on material cost (used in material cost calculation)
+MARKUP_FACTOR = 1.15          # 25% markup on material cost (used in material cost calculation)
 INSTALL_COST_PER_SQFT = 17    # Installation cost per square foot
-FABRICATION_COST_PER_SQFT = 17  # Fabrication cost per square foot
+FABRICATION_COST_PER_SQFT = 20  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05               # 5% GST
 FINAL_MARKUP_PERCENTAGE = 0  # 10% markup applied to final price (this does not affect IB)

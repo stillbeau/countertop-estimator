@@ -115,15 +115,11 @@ if df_inventory is None:
 st.write(f"**Total slabs loaded:** {len(df_inventory)}")
 
 # --- Thickness Selector ---
-# Normalize thickness values in data (trim and lower case) for robust matching
 df_inventory["Thickness"] = df_inventory["Thickness"].astype(str).str.strip().str.lower()
-# Allow selection options that match the normalized data
 thickness_options = ["1.2cm", "2cm", "3cm"]
 selected_thickness = st.selectbox("Select Thickness", options=thickness_options, index=2)
-# Use normalized comparison for filtering
 df_inventory = df_inventory[df_inventory["Thickness"] == selected_thickness.lower()]
 
-# Debug: Show slabs after thickness filtering
 st.write(f"**Slabs after thickness filter ({selected_thickness}):** {len(df_inventory)}")
 if df_inventory.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
@@ -140,9 +136,6 @@ else:
 
 # --- Compute Unit Cost ---
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
-
-# Debug: List available slab colors (or Full Names)
-st.write("**Available Slabs (by Full Name):**", df_inventory["Full Name"].unique())
 
 # --- Square Footage Input ---
 sq_ft_input = st.number_input(
@@ -167,7 +160,6 @@ df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg(
     serial_numbers=("Serial Number", lambda x: ", ".join(x.astype(str)))
 ).reset_index()
 
-# Debug: Show number of aggregated groups
 st.write(f"**Number of aggregated slab groups:** {len(df_agg)}")
 
 required_material = sq_ft_used * 1.2

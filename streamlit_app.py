@@ -36,7 +36,6 @@ SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"
 SMTP_PORT = int(st.secrets["SMTP_PORT"])           # e.g., 587
 EMAIL_USER = st.secrets["EMAIL_USER"]              # e.g., "85e00d001@smtp-brevo.com"
 EMAIL_PASSWORD = st.secrets["EMAIL_PASSWORD"]
-# If you only want emails sent to specific addresses, configure RECIPIENT_EMAILS accordingly.
 RECIPIENT_EMAILS = st.secrets.get("RECIPIENT_EMAILS", "sambeaumont@me.com")
 
 # --- Google Sheets URL for cost data ---
@@ -52,9 +51,8 @@ def load_data():
             st.error("❌ Error loading the file. Check the Google Sheets URL.")
             return None
         df = pd.read_csv(io.StringIO(response.text))
-        # Clean column names
         df.columns = df.columns.str.strip()
-        # Convert and clean numeric columns if present
+        # Convert numeric columns
         if "Serialized On Hand Cost" in df.columns:
             df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].replace("[\$,]", "", regex=True).astype(float)
         if "Available Sq Ft" in df.columns:
@@ -67,7 +65,6 @@ def load_data():
         return None
 
 def calculate_aggregated_costs(record, sq_ft_used):
-    # Calculate costs using unit cost, material markup, fabrication, and installation.
     unit_cost = record["unit_cost"]
     material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
@@ -86,7 +83,6 @@ def calculate_aggregated_costs(record, sq_ft_used):
 def send_email(subject, body):
     msg = MIMEMultipart()
     msg["From"] = EMAIL_USER
-    # Process recipients from a comma-separated string if needed.
     if isinstance(RECIPIENT_EMAILS, str):
         recipient_emails = [email.strip() for email in RECIPIENT_EMAILS.split(",")]
     else:
@@ -115,25 +111,38 @@ if df_inventory is None:
     st.error("Data could not be loaded.")
     st.stop()
 
+# Debug: Show total slabs loaded
+st.write(f"**Total slabs loaded:** {len(df_inventory)}")
+
 # --- Thickness Selector ---
-thickness = st.selectbox("Select Thickness", options=["1.2cm", "2cm", "3cm"], index=2)
-df_inventory = df_inventory[df_inventory["Thickness"] == thickness]
+# Normalize thickness values in data (trim and lower case) for robust matching
+df_inventory["Thickness"] = df_inventory["Thickness"].astype(str).str.strip().str.lower()
+# Allow selection options that match the normalized data
+thickness_options = ["1.2cm", "2cm", "3cm"]
+selected_thickness = st.selectbox("Select Thickness", options=thickness_options, index=2)
+# Use normalized comparison for filtering
+df_inventory = df_inventory[df_inventory["Thickness"] == selected_thickness.lower()]
+
+# Debug: Show slabs after thickness filtering
+st.write(f"**Slabs after thickness filter ({selected_thickness}):** {len(df_inventory)}")
 if df_inventory.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
 # --- Map Supplier and Create Combined Identifier ---
 supplier_mapping = {"VER": "Vernon", "ABB": "Abbotsford"}
-# If mapping not found, retain the original location.
 df_inventory["Supplier"] = df_inventory["Location"].map(supplier_mapping).fillna(df_inventory["Location"])
 if "Brand" in df_inventory.columns and "Color" in df_inventory.columns:
-    df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
+    df_inventory["Full Name"] = df_inventory["Brand"].astype(str) + " - " + df_inventory["Color"].astype(str)
 else:
     st.error("Required columns 'Brand' or 'Color' are missing.")
     st.stop()
 
 # --- Compute Unit Cost ---
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
+
+# Debug: List available slab colors (or Full Names)
+st.write("**Available Slabs (by Full Name):**", df_inventory["Full Name"].unique())
 
 # --- Square Footage Input ---
 sq_ft_input = st.number_input(
@@ -158,8 +167,12 @@ df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg(
     serial_numbers=("Serial Number", lambda x: ", ".join(x.astype(str)))
 ).reset_index()
 
+# Debug: Show number of aggregated groups
+st.write(f"**Number of aggregated slab groups:** {len(df_agg)}")
+
 required_material = sq_ft_used * 1.2
 df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
+st.write(f"**Aggregated groups after filtering by required material ({required_material} sq.ft):** {len(df_agg)}")
 if df_agg.empty:
     st.error("No colors have enough total material for the selected square footage.")
     st.stop()
@@ -176,6 +189,7 @@ df_valid = df_agg[df_agg["final_price"] > 0]
 if df_valid.empty:
     st.error("No valid slab prices available.")
     st.stop()
+
 min_possible_cost = int(df_valid["final_price"].min())
 max_possible_cost = int(df_valid["final_price"].max())
 
@@ -233,7 +247,7 @@ if pwd == "sam":
         st.markdown(f"- **Slab:** {selected_record['Full Name']}")
         st.markdown(f"- **Supplier:** {selected_record['Supplier']}")
         st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
-        st.markdown(f"- **Thickness:** {thickness}")
+        st.markdown(f"- **Thickness:** {selected_thickness}")
         st.markdown(f"- **Square Footage (used):** {sq_ft_used}")
         st.markdown(f"- **Slab Sq Ft (Aggregated):** {selected_record['available_sq_ft']:.2f} sq.ft")
         st.markdown(f"- **Slab Count:** {selected_record['slab_count']}")
@@ -270,7 +284,7 @@ Countertop Cost Estimator Details:
 Slab: {selected_record['Full Name']}
 Supplied by: {selected_record['Supplier']}
 Edge Profile: {selected_edge_profile}
-Thickness: {thickness}
+Thickness: {selected_thickness}
 Square Footage (used): {sq_ft_used}
 Slab Sq Ft (Aggregated): {selected_record['available_sq_ft']:.2f} sq.ft
 Slab Count: {selected_record['slab_count']}

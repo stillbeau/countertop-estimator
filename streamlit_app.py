@@ -29,7 +29,7 @@ INSTALL_COST_PER_SQFT = 20    # Installation cost per square foot
 FABRICATION_COST_PER_SQFT = 17  # Fabrication cost per square foot
 ADDITIONAL_IB_RATE = 0        # Extra rate added to material in IB calculation (per sq.ft)
 GST_RATE = 0.05               # 5% GST
-FINAL_MARKUP_PERCENTAGE = 0.1  # 10% markup applied to final price (this does not affect IB)
+FINAL_MARKUP_PERCENTAGE = 0.20  # 10% markup applied to final price (this does not affect IB)
 
 # --- Email Configuration using st.secrets ---
 SMTP_SERVER = st.secrets["SMTP_SERVER"]          # e.g., "smtp-relay.brevo.com"

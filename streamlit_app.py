@@ -162,7 +162,7 @@ df_agg = df_inventory.groupby(["Full Name", "Supplier"]).agg(
 
 st.write(f"**Number of aggregated slab groups:** {len(df_agg)}")
 
-required_material = sq_ft_used * 1.2
+required_material = sq_ft_used * 1.1
 df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
 st.write(f"**Aggregated groups after filtering by required material ({required_material} sq.ft):** {len(df_agg)}")
 if df_agg.empty:

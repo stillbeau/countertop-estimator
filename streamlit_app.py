@@ -98,6 +98,41 @@ else:
     st.error("Required columns 'Brand' or 'Color' are missing.")
     st.stop()
 
+# --- Branch Selector ---
+branch_locations = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
+selected_branch = st.selectbox("Select Your Branch Location", branch_locations)
+
+# --- Branch to Supplier Filter ---
+branch_to_supplier = {
+    "Vernon": ["Vernon"],
+    "Victoria": ["Victoria"],
+    "Vancouver": ["Vancouver"],
+    "Calgary": ["Calgary"],
+    "Edmonton": ["Edmonton"],
+    "Saskatoon": ["Saskatoon"],
+    "Winnipeg": ["Winnipeg"],
+}
+
+df_inventory = df_inventory[df_inventory["Supplier"].isin(branch_to_supplier.get(selected_branch, []))]
+
+if df_inventory.empty:
+    st.error("No slabs available for the selected branch.")
+    st.stop()
+
+# --- Determine Fabrication Plant ---
+def get_fabrication_plant(supplier_location):
+    saskatoon_group = ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
+    abbotsford_group = ["Vernon", "Victoria", "Vancouver"]
+    if supplier_location in saskatoon_group:
+        return "Saskatoon"
+    elif supplier_location in abbotsford_group:
+        return "Abbotsford"
+    else:
+        return supplier_location
+
+fabrication_plant = get_fabrication_plant(selected_branch)
+st.markdown(f"**Fabrication Plant:** {fabrication_plant}")
+
 # --- Compute Unit Cost ---
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
@@ -115,27 +150,6 @@ if sq_ft_input < MINIMUM_SQ_FT:
     st.info(f"Minimum square footage is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} sq ft for pricing.")
 else:
     sq_ft_used = sq_ft_input
-
-# --- Material Supplied Location ---
-material_locations = sorted(df_inventory["Supplier"].unique())
-selected_material_location = st.selectbox(
-    "Select Material Supplied From Location",
-    options=material_locations,
-    help="Where the material is currently located."
-)
-
-def get_fabrication_plant(supplier_location):
-    saskatoon_group = ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
-    abbotsford_group = ["Vernon", "Victoria", "Vancouver"]
-    if supplier_location in saskatoon_group:
-        return "Saskatoon"
-    elif supplier_location in abbotsford_group:
-        return "Abbotsford"
-    else:
-        return supplier_location
-
-fabrication_plant = get_fabrication_plant(selected_material_location)
-st.markdown(f"**Fabrication Plant:** {fabrication_plant}")
 
 # --- Aggregate Data by Slab ---
 df_agg = (

@@ -84,9 +84,7 @@ if df_inventory.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
-# --- Map Material Location ---
-df_inventory["Location"] = df_inventory["Location"].astype(str).str.strip()
-
+# --- Create Full Name field ---
 if "Brand" in df_inventory.columns and "Color" in df_inventory.columns:
     df_inventory["Full Name"] = df_inventory["Brand"].astype(str) + " - " + df_inventory["Color"].astype(str)
 else:
@@ -97,16 +95,17 @@ else:
 branch_locations = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
 selected_branch = st.selectbox("Select Your Branch Location", branch_locations)
 
-# --- Filter material locations available to the selected branch ---
+# --- Branch to Material Location Access ---
 branch_to_material_sources = {
     "Vernon": ["Vernon", "Abbotsford"],
-    "Victoria": ["Abbotsford"],
-    "Vancouver": ["Abbotsford"],
+    "Victoria": ["Vernon", "Abbotsford"],
+    "Vancouver": ["Vernon", "Abbotsford"],
     "Calgary": ["Edmonton", "Saskatoon"],
     "Edmonton": ["Edmonton", "Saskatoon"],
     "Saskatoon": ["Edmonton", "Saskatoon"],
-    "Winnipeg": ["Saskatoon"],
+    "Winnipeg": ["Edmonton", "Saskatoon"],
 }
+
 df_inventory = df_inventory[df_inventory["Location"].isin(branch_to_material_sources.get(selected_branch, []))]
 
 # --- Determine Fabrication Plant ---

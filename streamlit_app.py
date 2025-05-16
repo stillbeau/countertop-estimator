@@ -4,8 +4,7 @@ import requests
 import io
 
 # --- Custom CSS for improved mobile readability ---
-st.markdown(
-    """
+st.markdown("""
     <style>
     div[data-baseweb="select"] {
         font-size: 0.8rem;
@@ -14,9 +13,7 @@ st.markdown(
         font-size: 0.8rem;
     }
     </style>
-    """,
-    unsafe_allow_html=True
-)
+""", unsafe_allow_html=True)
 
 # --- Configurations ---
 MINIMUM_SQ_FT = 25
@@ -36,7 +33,7 @@ def load_data():
     try:
         response = requests.get(GOOGLE_SHEET_URL)
         if response.status_code != 200:
-            st.error("\u274c Error loading the file. Check the Google Sheets URL.")
+            st.error("❌ Error loading the file. Check the Google Sheets URL.")
             return None
         df = pd.read_csv(io.StringIO(response.text))
         df.columns = df.columns.str.strip()
@@ -48,7 +45,7 @@ def load_data():
             df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors="coerce").fillna(0).astype(int)
         return df
     except Exception as e:
-        st.error(f"\u274c Failed to load data: {e}")
+        st.error(f"❌ Failed to load data: {e}")
         return None
 
 def calculate_aggregated_costs(record, sq_ft_used):
@@ -83,14 +80,12 @@ thickness_options = ["1.2cm", "2cm", "3cm"]
 selected_thickness = st.selectbox("Select Thickness", options=thickness_options, index=2)
 df_inventory = df_inventory[df_inventory["Thickness"] == selected_thickness.lower()]
 
-st.write(f"**Slabs after thickness filter ({selected_thickness}):** {len(df_inventory)}")
 if df_inventory.empty:
     st.warning("No slabs match the selected thickness. Please adjust your filter.")
     st.stop()
 
-# --- Map Supplier and Create Combined Identifier ---
-supplier_mapping = {"VER": "Vernon", "ABB": "Abbotsford"}
-df_inventory["Supplier"] = df_inventory["Location"].map(supplier_mapping).fillna(df_inventory["Location"])
+# --- Map Material Location ---
+df_inventory["Location"] = df_inventory["Location"].astype(str).str.strip()
 
 if "Brand" in df_inventory.columns and "Color" in df_inventory.columns:
     df_inventory["Full Name"] = df_inventory["Brand"].astype(str) + " - " + df_inventory["Color"].astype(str)
@@ -102,33 +97,26 @@ else:
 branch_locations = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
 selected_branch = st.selectbox("Select Your Branch Location", branch_locations)
 
-# --- Branch to Supplier Filter ---
-branch_to_supplier = {
-    "Vernon": ["Vernon"],
-    "Victoria": ["Victoria"],
-    "Vancouver": ["Vancouver"],
-    "Calgary": ["Calgary"],
-    "Edmonton": ["Edmonton"],
-    "Saskatoon": ["Saskatoon"],
-    "Winnipeg": ["Winnipeg"],
+# --- Filter material locations available to the selected branch ---
+branch_to_material_sources = {
+    "Vernon": ["Vernon", "Abbotsford"],
+    "Victoria": ["Abbotsford"],
+    "Vancouver": ["Abbotsford"],
+    "Calgary": ["Edmonton", "Saskatoon"],
+    "Edmonton": ["Edmonton", "Saskatoon"],
+    "Saskatoon": ["Edmonton", "Saskatoon"],
+    "Winnipeg": ["Saskatoon"],
 }
-
-df_inventory = df_inventory[df_inventory["Supplier"].isin(branch_to_supplier.get(selected_branch, []))]
-
-if df_inventory.empty:
-    st.error("No slabs available for the selected branch.")
-    st.stop()
+df_inventory = df_inventory[df_inventory["Location"].isin(branch_to_material_sources.get(selected_branch, []))]
 
 # --- Determine Fabrication Plant ---
-def get_fabrication_plant(supplier_location):
-    saskatoon_group = ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
-    abbotsford_group = ["Vernon", "Victoria", "Vancouver"]
-    if supplier_location in saskatoon_group:
-        return "Saskatoon"
-    elif supplier_location in abbotsford_group:
+def get_fabrication_plant(branch):
+    if branch in ["Vernon", "Victoria", "Vancouver"]:
         return "Abbotsford"
+    elif branch in ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]:
+        return "Saskatoon"
     else:
-        return supplier_location
+        return "Unknown"
 
 fabrication_plant = get_fabrication_plant(selected_branch)
 st.markdown(f"**Fabrication Plant:** {fabrication_plant}")
@@ -137,23 +125,15 @@ st.markdown(f"**Fabrication Plant:** {fabrication_plant}")
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
 # --- Square Footage Input ---
-sq_ft_input = st.number_input(
-    "Enter Square Footage Needed",
-    min_value=1,
-    value=40,
-    step=1,
-    format="%d",
-    help="Measure the front edge and depth (in inches), multiply them, and divide by 144."
-)
+sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
+sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
+
 if sq_ft_input < MINIMUM_SQ_FT:
-    sq_ft_used = MINIMUM_SQ_FT
     st.info(f"Minimum square footage is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} sq ft for pricing.")
-else:
-    sq_ft_used = sq_ft_input
 
 # --- Aggregate Data by Slab ---
 df_agg = (
-    df_inventory.groupby(["Full Name", "Supplier"]).agg(
+    df_inventory.groupby(["Full Name", "Location"]).agg(
         available_sq_ft=("Available Sq Ft", "sum"),
         unit_cost=("unit_cost", "max"),
         slab_count=("Serial Number", "count"),
@@ -163,18 +143,14 @@ df_agg = (
 
 required_material = sq_ft_used * 1.1
 df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
+
 if df_agg.empty:
     st.error("No colors have enough total material for the selected square footage.")
     st.stop()
 
 # --- Final Price Calculation ---
-def compute_final_price(row):
-    cost_info = calculate_aggregated_costs(row, sq_ft_used)
-    total = cost_info["total_cost"]
-    base_final = total + (total * GST_RATE)
-    return base_final
+df_agg["final_price"] = df_agg.apply(lambda row: calculate_aggregated_costs(row, sq_ft_used)["total_cost"] * (1 + GST_RATE), axis=1)
 
-df_agg["final_price"] = df_agg.apply(compute_final_price, axis=1)
 df_valid = df_agg[df_agg["final_price"] > 0]
 if df_valid.empty:
     st.error("No valid slab prices available.")
@@ -183,15 +159,7 @@ if df_valid.empty:
 min_possible_cost = int(df_valid["final_price"].min())
 max_possible_cost = int(df_valid["final_price"].max())
 
-max_job_cost = st.slider(
-    "Select Maximum Job Cost ($)",
-    min_value=min_possible_cost,
-    max_value=max_possible_cost,
-    value=max_possible_cost,
-    step=100,
-)
-
-st.write("Selected Maximum Job Cost: $", max_job_cost)
+max_job_cost = st.slider("Select Maximum Job Cost ($)", min_value=min_possible_cost, max_value=max_possible_cost, value=max_possible_cost, step=100)
 
 df_agg_filtered = df_agg[df_agg["final_price"] <= max_job_cost]
 if df_agg_filtered.empty:
@@ -202,27 +170,22 @@ records = df_agg_filtered.to_dict("records")
 selected_record = st.selectbox(
     "Select Color",
     options=records,
-    format_func=lambda record: f"{record['Full Name']} - (${record['final_price'] / sq_ft_used:.2f}/sq ft)",
+    format_func=lambda record: f"{record['Full Name']} - (${record['final_price'] / sq_ft_used:.2f}/sq ft)"
 )
 
 st.markdown(f"**Total Available Sq Ft:** {selected_record['available_sq_ft']:.0f} sq.ft")
 st.markdown(f"**Number of Slabs:** {selected_record['slab_count']}")
 
 search_url = f"https://www.google.com/search?q={selected_record['Full Name'].replace(' ', '+')}+countertop"
-st.markdown(f"[\ud83d\udd0e Google Image Search]({search_url})")
+st.markdown(f"[🔎 Google Image Search]({search_url})")
 
-edge_profiles = [
-    "Crescent", "Basin", "Boulder", "Volcanic", "Piedmont",
-    "Summit", "Seacliff", "Alpine", "Treeline"
-]
-default_index = edge_profiles.index("Seacliff") if "Seacliff" in edge_profiles else 0
-selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles, index=default_index)
+edge_profiles = ["Crescent", "Basin", "Boulder", "Volcanic", "Piedmont", "Summit", "Seacliff", "Alpine", "Treeline"]
+selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles, index=edge_profiles.index("Seacliff"))
 
 costs = calculate_aggregated_costs(selected_record, sq_ft_used)
 sub_total = costs["total_cost"]
 gst_amount = sub_total * GST_RATE
-base_final_price = sub_total + gst_amount
-final_price = base_final_price * (1 + FINAL_MARKUP_PERCENTAGE)
+final_price = (sub_total + gst_amount) * (1 + FINAL_MARKUP_PERCENTAGE)
 
 with st.expander("View Subtotal & GST"):
     st.markdown(f"**Subtotal (before tax):** ${sub_total:,.2f}")
@@ -237,7 +200,7 @@ pwd = st.text_input("Enter password to view detailed breakdown", type="password"
 if pwd == "floform":
     with st.expander("View Detailed Breakdown"):
         st.markdown(f"- **Slab:** {selected_record['Full Name']}")
-        st.markdown(f"- **Supplier:** {selected_record['Supplier']}")
+        st.markdown(f"- **Material Location:** {selected_record['Location']}")
         st.markdown(f"- **Fabrication Plant:** {fabrication_plant}")
         st.markdown(f"- **Edge Profile:** {selected_edge_profile}")
         st.markdown(f"- **Thickness:** {selected_thickness}")

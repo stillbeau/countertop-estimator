@@ -48,6 +48,11 @@ def load_inventory_from_all_tabs(sheet_url, sheet_tabs, creds):
         except Exception as e:
             st.warning(f"⚠️ Skipped tab '{tab}': {e}")
     return pd.concat(all_data, ignore_index=True)
+    
+st.write("✅ Tabs loaded:", sheet_tabs)
+st.write("✅ Total rows loaded:", len(df_inventory))
+st.write("✅ Sample of loaded data:")
+st.dataframe(df_inventory.head())
 
 # --- Pricing logic ---
 def calculate_aggregated_costs(record, sq_ft_used):

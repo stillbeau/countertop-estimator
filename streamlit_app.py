@@ -16,7 +16,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- Configurations ---
-MINIMUM_SQ_FT = 25
+MINIMUM_SQ_FT = 35
 MARKUP_FACTOR = 1.15
 INSTALL_COST_PER_SQFT = 20
 FABRICATION_COST_PER_SQFT = 17

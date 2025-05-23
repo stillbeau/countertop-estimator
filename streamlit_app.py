@@ -3,6 +3,69 @@ import pandas as pd
 import requests
 import io
 
+import streamlit as st
+import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
+# No need to import json here if st.secrets handles parsing for you,
+# but gspread.service_account_from_dict expects a dict.
+# st.secrets['gcp_service_account'] should already be a dict if formatted correctly as a string in secrets.
+
+# --- Configurations (keep as is) ---
+MINIMUM_SQ_FT = 35
+# ... other constants ...
+GST_RATE = 0.05
+FINAL_MARKUP_PERCENTAGE = 0.25
+
+# --- Google Sheets API Configuration ---
+# SPREADSHEET_ID should still be defined here or fetched from secrets if you prefer
+SPREADSHEET_ID = "1vSgq5Sa6y-d9SoWKngBEBwpwlFedFL66P5GqW0S7qq-CdZHiOyevSgNnmzApVxR_2RuwknpiIRxPZ_T" # <<< YOUR SPREADSHEET ID
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+
+@st.cache_data(show_spinner=False)
+def load_data_from_google_sheet(sheet_name):
+    try:
+        # Use Streamlit Secrets for credentials
+        # st.secrets["gcp_service_account"] should directly give you the dictionary
+        # if the TOML string was parsed correctly by Streamlit.
+        # If it's still a string, you might need json.loads()
+        creds_json_str = st.secrets["gcp_service_account"]
+        # It's good practice to ensure it's a dictionary
+        if isinstance(creds_json_str, str):
+             # This import might be needed if creds_json_str is a string
+            import json
+            creds_dict = json.loads(creds_json_str)
+        else:
+            # If Streamlit already parsed it to a dict (common for complex TOML values)
+            creds_dict = creds_json_str
+
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+
+        gc = gspread.authorize(credentials)
+        spreadsheet = gc.open_by_id(SPREADSHEET_ID)
+        worksheet = spreadsheet.worksheet(sheet_name)
+        df = pd.DataFrame(worksheet.get_all_records())
+
+        # ... (rest of your data cleaning logic)
+        df.columns = df.columns.str.strip()
+        if "Serialized On Hand Cost" in df.columns:
+            df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$, ]", "", regex=True).astype(float)
+        if "Available Sq Ft" in df.columns:
+            df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors="coerce")
+        if "Serial Number" in df.columns:
+            df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors="coerce").fillna(0).astype(int)
+
+        return df
+    except gspread.exceptions.WorksheetNotFound:
+        st.error(f"❌ Worksheet '{sheet_name}' not found in the Google Sheet. Please check the sheet name and ensure it exists.")
+        return None
+    except Exception as e:
+        st.error(f"❌ Failed to load data from '{sheet_name}' sheet: {e}")
+        st.error("Make sure the 'gcp_service_account' secret is correctly configured in Streamlit Cloud and your Google Sheet is shared with the service account email.")
+        return None
+
+# ... (rest of your Streamlit app code from the previous response) ...
+
 # --- Custom CSS for improved mobile readability ---
 st.markdown("""
     <style>

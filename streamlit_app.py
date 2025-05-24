@@ -49,11 +49,35 @@ def load_data_from_google_sheet(sheet_name_to_load): # Renamed argument for clar
         credentials = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         gc = gspread.authorize(credentials)
 
+     # ... (lines for loading secrets and initializing creds_dict) ...
+
+        st.info(f"Attempting to authorize gspread with service_account_from_dict using client_email: {creds_dict.get('client_email')}")
+        try:
+            gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
+            st.success(f"gspread client initialized. Type: {type(gc)}") # Good to confirm the type
+        except Exception as e:
+            st.error(f"❌ Failed to initialize gspread client (gc = gspread.service_account_from_dict(...)): {e}")
+            return None
+
         # --- Debugging: Check if open_by_id attribute exists ---
         if not hasattr(gc, 'open_by_id'):
-            st.error(f"❌ gspread client object (type: {type(gc)}) does not have 'open_by_id' attribute. This usually means an outdated gspread version or incorrect initialization. Check requirements.txt and redeploy.")
-            return None
+            st.error(f"❌ CRITICAL: 'gc' object (type: {type(gc)}) DOES NOT HAVE attribute 'open_by_id'.")
+            st.warning("This strongly suggests an issue with the gspread library version or installation in the Streamlit Cloud environment, even if requirements.txt seems correct.")
+            # You could add this to see all available attributes if it fails:
+            # st.write(f"Available attributes/methods for 'gc' object: {dir(gc)}")
+            return None # Stop execution if this critical method is missing
+        else:
+            st.success("✅ SUCCESS: 'gc' object HAS attribute 'open_by_id'. Proceeding to open sheet.")
         # --- End Debugging ---
+
+        st.info(f"Attempting to open spreadsheet by ID: {SPREADSHEET_ID}")
+        try:
+            spreadsheet = gc.open_by_id(SPREADSHEET_ID) # This line will now only be reached if open_by_id exists
+            st.success(f"Successfully opened spreadsheet: '{spreadsheet.title}'")
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error(f"❌ Spreadsheet with ID '{SPREADSHEET_ID}' not found. Check SPREADSHEET_ID and sharing permissions with service account: {creds_dict.get('client_email')}")
+            return None
+        # ... (rest of the try-except blocks for opening worksheet and getting records) ...
 
         spreadsheet = gc.open_by_id(SPREADSHEET_ID)
         worksheet = spreadsheet.worksheet(sheet_name_to_load)

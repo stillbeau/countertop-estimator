@@ -44,6 +44,13 @@ def load_data_from_google_sheet(sheet_name):
         creds_dict = json.loads(creds_json_str)
         credentials = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
         gc = gspread.authorize(credentials)
+
+        # --- Debugging: Check if open_by_id attribute exists ---
+        if not hasattr(gc, 'open_by_id'):
+            st.error(f"❌ gspread client object (type: {type(gc)}) does not have 'open_by_id' attribute. This usually means an outdated gspread version or incorrect initialization.")
+            return None
+        # --- End Debugging ---
+
         spreadsheet = gc.open_by_id(SPREADSHEET_ID)
         worksheet = spreadsheet.worksheet(sheet_name)
         df = pd.DataFrame(worksheet.get_all_records())

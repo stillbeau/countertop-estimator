@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread # Used for Google Sheets API interaction
-from google.oauth2.service_account import Credentials # This is imported by gspread, not directly used for auth in this pattern
+# from google.oauth2.service_account import Credentials # Not directly used with service_account_from_dict
 import json # Used to parse the service account JSON string from Streamlit secrets
 
 # --- Custom CSS for improved mobile readability ---
@@ -26,18 +26,17 @@ GST_RATE = 0.05
 FINAL_MARKUP_PERCENTAGE = 0.25
 
 # --- Google Sheets API Configuration ---
-# CORRECTED SPREADSHEET_ID based on your provided URL
-SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
+SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ" # Corrected ID
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
-# --- Fully Instrumented Function to load data (modified to use open_by_key) ---
+# --- Instrumented Function to load data (using open_by_key) ---
 @st.cache_data(show_spinner=False)
 def load_data_from_google_sheet(sheet_name_to_load):
     st.info("--- Starting data load process ---")
     st.info(f"Attempting to load data for sheet/tab: '{sheet_name_to_load}'")
 
     st.info("1. Attempting to load credentials from secrets...")
-    creds_dict = None # Initialize to avoid reference before assignment if first try fails
+    creds_dict = None
     try:
         creds_json_str = st.secrets["gcp_service_account"]
         creds_dict = json.loads(creds_json_str)
@@ -53,7 +52,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
         return None
 
     st.info(f"2. Attempting to authorize gspread using client_email: {creds_dict.get('client_email')}")
-    gc = None # Initialize to avoid reference before assignment
+    gc = None
     try:
         gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
         st.success(f"✅ 2. gspread client initialized. Type: {type(gc)}")
@@ -66,44 +65,34 @@ def load_data_from_google_sheet(sheet_name_to_load):
         return None
 
     st.info("3. Verifying gspread client and available methods...")
-    # --- Debugging: Check available methods ---
     gc_attributes = []
     try:
         gc_attributes = dir(gc)
     except Exception:
-        pass # Ignore if dir fails for some reason on a problematic object
+        pass 
 
     open_method = None
     if 'open_by_key' in gc_attributes:
         st.success("✅ 3. 'open_by_key' method IS AVAILABLE on 'gc' object. Proceeding with this method.")
         open_method = gc.open_by_key
-    elif 'open_by_id' in gc_attributes: # Fallback to open_by_id if it magically appears
+    elif 'open_by_id' in gc_attributes: 
         st.warning("⚠️ 3. 'open_by_key' preferred but not found; 'open_by_id' IS AVAILABLE. Using 'open_by_id'.")
         open_method = gc.open_by_id
     else:
         st.error(f"❌ 3. CRITICAL: Neither 'open_by_key' nor 'open_by_id' found on 'gc' object (type: {type(gc)}).")
-        st.subheader("Inspecting the 'gc' object:")
-        st.write(f"Is 'gc' None? {gc is None}")
-        st.write("Methods and attributes available on 'gc' (from dir(gc)):")
-        if gc_attributes:
-            st.code('\n'.join(gc_attributes[:50])) # Show first 50
-            if len(gc_attributes) > 50: st.write(f"... and {len(gc_attributes) - 50} more.")
-        else:
-            st.write("Could not retrieve attributes using dir(gc).")
+        # ... (rest of dir(gc) inspection if needed for future debugging) ...
         return None
-    # --- End Debugging ---
 
     st.info(f"4. Attempting to open spreadsheet by ID/Key: '{SPREADSHEET_ID}' using the determined open method.")
     spreadsheet = None
     try:
-        spreadsheet = open_method(SPREADSHEET_ID) # Use the determined open_method
+        spreadsheet = open_method(SPREADSHEET_ID) 
         st.success(f"✅ 4. Successfully opened spreadsheet: '{spreadsheet.title}'")
     except gspread.exceptions.SpreadsheetNotFound:
         st.error(f"❌ 4. Spreadsheet with ID '{SPREADSHEET_ID}' not found. Check SPREADSHEET_ID and sharing permissions with: {creds_dict.get('client_email')}")
         return None
     except gspread.exceptions.APIError as apie:
         st.error(f"❌ 4. Google Sheets API Error opening spreadsheet: {apie}")
-        st.error("Ensure SPREADSHEET_ID is correct, service account has 'Viewer' permission, and Sheets API is enabled.")
         return None
     except Exception as e:
         st.error(f"❌ 4. Unexpected error opening spreadsheet: {e} (Type: {type(e)})")
@@ -149,11 +138,9 @@ def load_data_from_google_sheet(sheet_name_to_load):
             st.error(f"❌ 7. Critical columns missing in '{sheet_name_to_load}'. Found: {list(df.columns)}")
             return pd.DataFrame() 
         
-        # Robust conversion for 'Serialized On Hand Cost'
         df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$, ]", "", regex=True).str.strip()
         df["Serialized On Hand Cost"] = pd.to_numeric(df["Serialized On Hand Cost"], errors='coerce')
 
-        # Robust conversion for 'Available Sq Ft'
         df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
 
         if "Serial Number" in df.columns:
@@ -162,7 +149,6 @@ def load_data_from_google_sheet(sheet_name_to_load):
             st.info(f"ℹ️ 7. Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
             df["Serial Number"] = 0 
 
-        # Drop rows where essential numeric columns became NaN or where Available Sq Ft is 0
         df.dropna(subset=['Serialized On Hand Cost', 'Available Sq Ft'], inplace=True) 
         df = df[df['Available Sq Ft'] > 0] 
 
@@ -176,7 +162,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
         st.error(f"❌ 7. Error processing DataFrame: {e} (Type: {type(e)})")
         return pd.DataFrame()
 
-# --- Cost Calculation Function (remains the same) ---
+# --- Cost Calculation Function ---
 def calculate_aggregated_costs(record, sq_ft_used):
     unit_cost = record.get("unit_cost", 0) 
     if unit_cost is None: unit_cost = 0 
@@ -195,15 +181,12 @@ def calculate_aggregated_costs(record, sq_ft_used):
         "ib_cost": ib_total_cost,
     }
 
-# --- Streamlit UI Begins Here (remains largely the same) ---
+# --- Streamlit UI Begins Here ---
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project.")
 
-# IMPORTANT: These names MUST exactly match the tab names in your Google Sheet for data loading!
-# Based on your screenshot, "Vernon data" is a tab, not "Vernon". Adjust as needed.
 branch_locations = ["InventoryData", "Vernon data", "Edmonton", "Saskatoon", "Abbotsford"] 
 selected_sheet_name = st.selectbox("Select Data Source (Sheet Tab Name)", branch_locations)
-
 
 with st.spinner(f"Loading inventory data for {selected_sheet_name}..."):
     df_inventory = load_data_from_google_sheet(selected_sheet_name) 
@@ -267,13 +250,13 @@ st.markdown(f"**Assumed Fabrication Plant for '{selected_sheet_name}' source:** 
 
 # Ensure required columns for unit_cost calculation exist and are valid
 if not ("Serialized On Hand Cost" in df_inventory.columns and \
-      "Available Sq Ft" in df_inventory.columns): # Removed the .empty check here as it's done later
+      "Available Sq Ft" in df_inventory.columns):
     st.error("Critical columns 'Serialized On Hand Cost' or 'Available Sq Ft' are missing before unit cost calculation. Cannot proceed.")
     st.stop()
 
 # Filter out zero or NaN Available Sq Ft before division
-df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna()] # Drop NaNs first
-df_inventory = df_inventory[df_inventory['Available Sq Ft'] > 0] # Then filter for > 0
+df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna()] 
+df_inventory = df_inventory[df_inventory['Available Sq Ft'] > 0] 
 if df_inventory.empty:
     st.error("All inventory items have zero or invalid 'Available Sq Ft' after filtering. Cannot calculate unit cost.")
     st.stop()
@@ -324,7 +307,7 @@ if not records:
 selected_record = st.selectbox("Select Material/Color", options=records,
                                format_func=lambda rec: f"{rec.get('Full Name', 'N/A')} ({rec.get('Location', 'N/A')}) - (${rec.get('final_price', 0) / sq_ft_used:.2f}/sq ft)")
 
-if selected_record: # Check if a record is selected
+if selected_record: 
     st.markdown(f"**Material:** {selected_record.get('Full Name', 'N/A')}")
     st.markdown(f"**Source Location:** {selected_record.get('Location', 'N/A')}")
     st.markdown(f"**Total Available Sq Ft (This Color/Location):** {selected_record.get('available_sq_ft', 0):.0f} sq.ft")
@@ -352,8 +335,31 @@ if selected_record: # Check if a record is selected
 
     if selected_record.get('slab_count', 0) > 1:
         st.info("Note: Multiple slabs contribute to this material option; color/pattern consistency may vary for natural stone.")
+
+    # --- RE-ADD DETAILED BREAKDOWN EXPANDER (NO PASSWORD FOR NOW) ---
+    with st.expander("View Detailed Breakdown"):
+        st.markdown(f"- **Slab Selected:** {selected_record.get('Full Name', 'N/A')}")
+        st.markdown(f"- **Material Source Location:** {selected_record.get('Location', 'N/A')}")
+        st.markdown(f"- **Fabrication Plant (for this source):** {fabrication_plant}")
+        st.markdown(f"- **Edge Profile Selected:** {selected_edge_profile}")
+        st.markdown(f"- **Thickness Selected:** {selected_thickness}") # Assuming selected_thickness is still in scope
+        st.markdown(f"- **Square Footage (for pricing):** {sq_ft_used}")
+        st.markdown(f"- **Slab Sq Ft (Aggregated for this Color/Location):** {selected_record.get('available_sq_ft', 0):.2f} sq.ft")
+        st.markdown(f"- **Number of Unique Slabs (This Color/Location):** {selected_record.get('slab_count', 0)}")
+        st.markdown(f"- **Contributing Serial Numbers:** {selected_record.get('serial_numbers', 'N/A')}")
+        st.markdown("--- Cost Components (before final markup & GST) ---")
+        st.markdown(f"- **Material & Fabrication Cost Component:** ${costs.get('material_and_fab', 0):,.2f}")
+        st.markdown(f"- **Installation Cost Component:** ${costs.get('install_cost', 0):,.2f}")
+        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost', 0):,.2f}") # IB often includes material at its base cost + fab
+        st.markdown("--- Totals ---")
+        st.markdown(f"- **Subtotal (Material, Fab, Install - before tax & final markup):** ${sub_total:,.2f}")
+        st.markdown(f"- **GST ({GST_RATE*100:.0f}% on subtotal):** ${gst_amount:,.2f}")
+        st.markdown(f"- **Total Including GST (before final markup):** ${(sub_total + gst_amount):,.2f}")
+        st.markdown(f"- **Final Marked-up Price (including GST):** ${final_price_marked_up:,.2f}")
+        st.markdown(f"Calculation: ((Subtotal + GST) * (1 + {FINAL_MARKUP_PERCENTAGE*100:.0f}% Markup))")
+
 else:
-    st.info("Please make a material selection to see price details.")
+    st.info("Please make a material selection to see price details and breakdown.")
 
 st.markdown("---")
 st.caption(f"Countertop Estimator. Data for '{selected_sheet_name}'. Current Time (Server): {pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S %Z')}")

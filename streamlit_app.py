@@ -26,7 +26,8 @@ GST_RATE = 0.05
 FINAL_MARKUP_PERCENTAGE = 0.25
 
 # --- Google Sheets API Configuration ---
-SPREADSHEET_ID = "1i6Gg-39R1YJSGTJIJlJWuGRfE-ReH97_F_EcMiLPa1Q" # From your screenshot
+# UPDATED SPREADSHEET_ID from the URL you just provided
+SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
 # --- Instrumented Function to load data (modified to use open_by_key) ---
@@ -165,8 +166,8 @@ def load_data_from_google_sheet(sheet_name_to_load):
 
 # --- Cost Calculation Function (remains the same) ---
 def calculate_aggregated_costs(record, sq_ft_used):
-    unit_cost = record.get("unit_cost", 0) # Added .get for safety
-    if unit_cost is None: unit_cost = 0 # Ensure unit_cost is not None
+    unit_cost = record.get("unit_cost", 0) 
+    if unit_cost is None: unit_cost = 0 
 
     material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
@@ -200,7 +201,7 @@ st.write(f"**Total slabs loaded from {selected_sheet_name}:** {len(df_inventory)
 
 if "Thickness" in df_inventory.columns:
     df_inventory["Thickness"] = df_inventory["Thickness"].astype(str).str.strip().str.lower()
-    thickness_options = sorted(list(df_inventory["Thickness"].unique())) # Use list() for safety
+    thickness_options = sorted(list(df_inventory["Thickness"].unique())) 
     if not thickness_options: thickness_options = ["1.2cm", "2cm", "3cm"] 
     default_thickness_index = thickness_options.index("3cm") if "3cm" in thickness_options else 0
     selected_thickness = st.selectbox("Select Thickness", options=thickness_options, index=default_thickness_index)
@@ -249,7 +250,6 @@ def get_fabrication_plant(sheet_or_branch_name):
 fabrication_plant = get_fabrication_plant(selected_sheet_name)
 st.markdown(f"**Assumed Fabrication Plant for '{selected_sheet_name}' source:** {fabrication_plant}")
 
-# Ensure required columns for unit_cost calculation exist and are valid
 if not ("Serialized On Hand Cost" in df_inventory.columns and \
       "Available Sq Ft" in df_inventory.columns and \
       not df_inventory[df_inventory['Available Sq Ft'] == 0].empty):
@@ -260,7 +260,6 @@ if not ("Serialized On Hand Cost" in df_inventory.columns and \
        (df_inventory['Available Sq Ft'] == 0).all():
         st.error("No inventory with valid 'Available Sq Ft' to calculate unit cost. Cannot proceed.")
         st.stop()
-# Filter out zero Available Sq Ft before division
 df_inventory = df_inventory[df_inventory['Available Sq Ft'] != 0]
 if df_inventory.empty:
     st.error("All inventory items have zero 'Available Sq Ft' after filtering. Cannot calculate unit cost.")
@@ -277,7 +276,7 @@ df_agg = (df_inventory.groupby(["Full Name", "Location"])
           .agg(available_sq_ft=("Available Sq Ft", "sum"),
                unit_cost=("unit_cost", "mean"), 
                slab_count=("Serial Number", "nunique"), 
-               serial_numbers=("Serial Number", lambda x: ", ".join(sorted(list(x.astype(str).unique()))))) # Use list() for safety
+               serial_numbers=("Serial Number", lambda x: ", ".join(sorted(list(x.astype(str).unique()))))) 
           .reset_index())
 
 required_material = sq_ft_used * 1.1

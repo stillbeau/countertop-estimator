@@ -29,113 +29,91 @@ FINAL_MARKUP_PERCENTAGE = 0.25
 SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ" # Corrected ID
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
-# --- Instrumented Function to load data (using open_by_key) ---
+# --- Function to load data from Google Sheets (Debugging messages removed) ---
 @st.cache_data(show_spinner=False)
 def load_data_from_google_sheet(sheet_name_to_load):
-    st.info("--- Starting data load process ---")
-    st.info(f"Attempting to load data for sheet/tab: '{sheet_name_to_load}'")
-
-    st.info("1. Attempting to load credentials from secrets...")
     creds_dict = None
     try:
         creds_json_str = st.secrets["gcp_service_account"]
         creds_dict = json.loads(creds_json_str)
-        st.success("✅ 1. Successfully loaded and parsed credentials from secrets.")
     except KeyError:
-        st.error("❌ 1. Secret 'gcp_service_account' not found in Streamlit Cloud secrets!")
+        st.error("❌ Critical Error: 'gcp_service_account' secret not found. App cannot access data. Please contact administrator.")
         return None
     except json.JSONDecodeError as jde:
-        st.error(f"❌ 1. Failed to parse JSON from 'gcp_service_account' secret: {jde}. Check its format.")
+        st.error(f"❌ Critical Error: Failed to parse Google service account credentials: {jde}. Please contact administrator.")
         return None
     except Exception as e:
-        st.error(f"❌ 1. Unexpected error loading secrets: {e} (Type: {type(e)})")
+        st.error(f"❌ Critical Error: Unexpected issue loading credentials: {e}. Please contact administrator.")
         return None
 
-    st.info(f"2. Attempting to authorize gspread using client_email: {creds_dict.get('client_email')}")
     gc = None
     try:
         gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
-        st.success(f"✅ 2. gspread client initialized. Type: {type(gc)}")
     except Exception as e:
-        st.error(f"❌ 2. Failed to initialize gspread client: {e} (Type: {type(e)})")
+        st.error(f"❌ Critical Error: Failed to initialize Google Sheets client: {e}. Please contact administrator.")
         return None
 
     if gc is None:
-        st.error("❌ 2a. 'gc' object is None after initialization. Cannot proceed.")
+        st.error("❌ Critical Error: Google Sheets client object is None after initialization. Please contact administrator.")
         return None
-
-    st.info("3. Verifying gspread client and available methods...")
-    gc_attributes = []
-    try:
-        gc_attributes = dir(gc)
-    except Exception:
-        pass 
 
     open_method = None
+    gc_attributes = dir(gc) # Check attributes once
+
     if 'open_by_key' in gc_attributes:
-        st.success("✅ 3. 'open_by_key' method IS AVAILABLE on 'gc' object. Proceeding with this method.")
         open_method = gc.open_by_key
     elif 'open_by_id' in gc_attributes: 
-        st.warning("⚠️ 3. 'open_by_key' preferred but not found; 'open_by_id' IS AVAILABLE. Using 'open_by_id'.")
         open_method = gc.open_by_id
     else:
-        st.error(f"❌ 3. CRITICAL: Neither 'open_by_key' nor 'open_by_id' found on 'gc' object (type: {type(gc)}).")
-        # ... (rest of dir(gc) inspection if needed for future debugging) ...
+        st.error(f"❌ Critical Error: Required gspread methods ('open_by_key' or 'open_by_id') not found on client object. App may be misconfigured. Please contact administrator.")
         return None
 
-    st.info(f"4. Attempting to open spreadsheet by ID/Key: '{SPREADSHEET_ID}' using the determined open method.")
     spreadsheet = None
     try:
-        spreadsheet = open_method(SPREADSHEET_ID) 
-        st.success(f"✅ 4. Successfully opened spreadsheet: '{spreadsheet.title}'")
+        spreadsheet = open_method(SPREADSHEET_ID)
     except gspread.exceptions.SpreadsheetNotFound:
-        st.error(f"❌ 4. Spreadsheet with ID '{SPREADSHEET_ID}' not found. Check SPREADSHEET_ID and sharing permissions with: {creds_dict.get('client_email')}")
+        st.error(f"❌ Error: Spreadsheet not found. Please ensure the data source is correctly set up and shared with: {creds_dict.get('client_email')}")
         return None
     except gspread.exceptions.APIError as apie:
-        st.error(f"❌ 4. Google Sheets API Error opening spreadsheet: {apie}")
+        st.error(f"❌ Error: A Google Sheets API error occurred: {apie}. The sheet might be inaccessible or API limits reached.")
         return None
     except Exception as e:
-        st.error(f"❌ 4. Unexpected error opening spreadsheet: {e} (Type: {type(e)})")
+        st.error(f"❌ Error: Unexpected issue opening spreadsheet: {e}.")
         return None
 
     if spreadsheet is None:
-        st.error("❌ 4a. Spreadsheet object is None. Cannot proceed.")
+        st.error("❌ Error: Spreadsheet object could not be opened. Cannot proceed.")
         return None
 
-    st.info(f"5. Attempting to open worksheet: '{sheet_name_to_load}' from '{spreadsheet.title}'")
     worksheet = None
     try:
         worksheet = spreadsheet.worksheet(sheet_name_to_load)
-        st.success(f"✅ 5. Successfully opened worksheet: '{worksheet.title}'")
     except gspread.exceptions.WorksheetNotFound:
-        st.error(f"❌ 5. Worksheet '{sheet_name_to_load}' not found in '{spreadsheet.title}'. Check tab name (case-sensitive).")
+        st.error(f"❌ Error: Worksheet tab '{sheet_name_to_load}' not found in the spreadsheet '{spreadsheet.title}'. Please check tab name (it's case-sensitive).")
         return None
     except Exception as e:
-        st.error(f"❌ 5. Unexpected error opening worksheet: {e} (Type: {type(e)})")
+        st.error(f"❌ Error: Unexpected issue opening worksheet '{sheet_name_to_load}': {e}.")
         return None
 
     if worksheet is None:
-        st.error("❌ 5a. Worksheet object is None. Cannot proceed.")
+        st.error(f"❌ Error: Worksheet object for '{sheet_name_to_load}' could not be opened. Cannot proceed.")
         return None
         
-    st.info(f"6. Attempting to get all records from '{worksheet.title}'...")
     df = None
     try:
         df = pd.DataFrame(worksheet.get_all_records())
-        st.success(f"✅ 6. Successfully fetched {len(df)} records.")
     except Exception as e:
-        st.error(f"❌ 6. Error getting records/creating DataFrame: {e} (Type: {type(e)})")
+        st.error(f"❌ Error: Could not retrieve records from worksheet '{worksheet.title}': {e}.")
         return None
 
     if df is None or df.empty:
-        st.warning("⚠️ 6a. DataFrame is empty or None after fetching records.")
+        st.warning(f"⚠️ No data found in worksheet '{worksheet.title}' or failed to create DataFrame.")
         return pd.DataFrame()
 
-    st.info("7. Processing DataFrame...")
     try:
         df.columns = df.columns.str.strip()
         if "Serialized On Hand Cost" not in df.columns or "Available Sq Ft" not in df.columns:
-            st.error(f"❌ 7. Critical columns missing in '{sheet_name_to_load}'. Found: {list(df.columns)}")
+            st.error(f"❌ Error: Critical data columns ('Serialized On Hand Cost' or 'Available Sq Ft') are missing from the sheet '{sheet_name_to_load}'. Columns found: {list(df.columns)}")
             return pd.DataFrame() 
         
         df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$, ]", "", regex=True).str.strip()
@@ -146,20 +124,19 @@ def load_data_from_google_sheet(sheet_name_to_load):
         if "Serial Number" in df.columns:
             df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
         else:
-            st.info(f"ℹ️ 7. Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
+            # This is more of an info, not an error that stops the app
+            # st.info(f"ℹ️ Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
             df["Serial Number"] = 0 
 
         df.dropna(subset=['Serialized On Hand Cost', 'Available Sq Ft'], inplace=True) 
         df = df[df['Available Sq Ft'] > 0] 
 
         if df.empty:
-            st.warning("⚠️ 7b. DataFrame is empty after cleaning and dropping rows with missing essential data.")
+            st.warning(f"⚠️ No valid data rows remaining in '{sheet_name_to_load}' after cleaning and filtering for essential numeric values.")
             return pd.DataFrame()
-
-        st.success("✅ 7. DataFrame processing complete.")
         return df
     except Exception as e:
-        st.error(f"❌ 7. Error processing DataFrame: {e} (Type: {type(e)})")
+        st.error(f"❌ Error: Failed during data processing for sheet '{sheet_name_to_load}': {e}.")
         return pd.DataFrame()
 
 # --- Cost Calculation Function ---
@@ -185,14 +162,16 @@ def calculate_aggregated_costs(record, sq_ft_used):
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project.")
 
-branch_locations = ["InventoryData", "Vernon data", "Edmonton", "Saskatoon", "Abbotsford"] 
-selected_sheet_name = st.selectbox("Select Data Source (Sheet Tab Name)", branch_locations)
+# This will be modified once you provide the old code for the branch selector
+# For now, it uses direct sheet names.
+sheet_tab_names_for_selection = ["InventoryData", "Vernon data", "Edmonton", "Saskatoon", "Abbotsford"] 
+selected_sheet_name = st.selectbox("Select Data Source (Sheet Tab Name)", sheet_tab_names_for_selection)
 
 with st.spinner(f"Loading inventory data for {selected_sheet_name}..."):
     df_inventory = load_data_from_google_sheet(selected_sheet_name) 
 
 if df_inventory is None or df_inventory.empty:
-    st.warning(f"Could not load or found no usable inventory data for '{selected_sheet_name}'. Review messages above for details.")
+    st.warning(f"Could not load or found no usable inventory data for '{selected_sheet_name}'. Please check error messages or ensure the sheet has valid data.")
     st.stop()
 
 st.write(f"**Total slabs loaded from {selected_sheet_name}:** {len(df_inventory)}")
@@ -217,6 +196,7 @@ else:
     st.error("Required 'Brand' or 'Color' columns missing. Cannot proceed.")
     st.stop()
 
+# This logic will likely be driven by the new "Branch Selector" you want to add back
 branch_to_material_sources = {
     "Vernon data": ["Vernon", "Abbotsford"], "Victoria": ["Vernon", "Abbotsford"],
     "Vancouver": ["Vernon", "Abbotsford"], "Calgary": ["Edmonton", "Saskatoon"],
@@ -226,8 +206,10 @@ branch_to_material_sources = {
 }
 
 if "Location" in df_inventory.columns:
-    if selected_sheet_name in branch_to_material_sources:
-      allowed_material_locations = branch_to_material_sources.get(selected_sheet_name, [])
+    # This key for branch_to_material_sources will need to align with your new branch selector
+    key_for_material_source = selected_sheet_name # Placeholder - will change with branch selector
+    if key_for_material_source in branch_to_material_sources:
+      allowed_material_locations = branch_to_material_sources.get(key_for_material_source, [])
       if allowed_material_locations:
           df_inventory = df_inventory[df_inventory["Location"].isin(allowed_material_locations)]
 else:
@@ -237,24 +219,26 @@ if df_inventory.empty:
     st.warning("No slabs available after applying location filters.")
     st.stop()
 
-def get_fabrication_plant(sheet_or_branch_name): 
-    branch_concept = sheet_or_branch_name 
-    if sheet_or_branch_name == "Vernon data": branch_concept = "Vernon"
+# This function will also likely be driven by the new "Branch Selector"
+def get_fabrication_plant(key_for_fab_plant): 
+    branch_concept = key_for_fab_plant 
+    if key_for_fab_plant == "Vernon data": branch_concept = "Vernon" # Example mapping
+    # Add other mappings if sheet names differ from conceptual branch names
+
     if branch_concept in ["Vernon", "Victoria", "Vancouver", "Abbotsford"]: return "Abbotsford"
     if branch_concept in ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]: return "Saskatoon"
-    if sheet_or_branch_name == "InventoryData" : return "Multiple (check material location)" 
+    if key_for_fab_plant == "InventoryData" : return "Multiple (check material location)" 
     return "Unknown"
 
-fabrication_plant = get_fabrication_plant(selected_sheet_name)
+fabrication_plant = get_fabrication_plant(selected_sheet_name) # Placeholder - will change
 st.markdown(f"**Assumed Fabrication Plant for '{selected_sheet_name}' source:** {fabrication_plant}")
 
-# Ensure required columns for unit_cost calculation exist and are valid
+
 if not ("Serialized On Hand Cost" in df_inventory.columns and \
       "Available Sq Ft" in df_inventory.columns):
     st.error("Critical columns 'Serialized On Hand Cost' or 'Available Sq Ft' are missing before unit cost calculation. Cannot proceed.")
     st.stop()
 
-# Filter out zero or NaN Available Sq Ft before division
 df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna()] 
 df_inventory = df_inventory[df_inventory['Available Sq Ft'] > 0] 
 if df_inventory.empty:
@@ -340,9 +324,9 @@ if selected_record:
     with st.expander("View Detailed Breakdown"):
         st.markdown(f"- **Slab Selected:** {selected_record.get('Full Name', 'N/A')}")
         st.markdown(f"- **Material Source Location:** {selected_record.get('Location', 'N/A')}")
-        st.markdown(f"- **Fabrication Plant (for this source):** {fabrication_plant}")
+        st.markdown(f"- **Fabrication Plant (for this source):** {fabrication_plant}") # This will update with branch logic
         st.markdown(f"- **Edge Profile Selected:** {selected_edge_profile}")
-        st.markdown(f"- **Thickness Selected:** {selected_thickness}") # Assuming selected_thickness is still in scope
+        st.markdown(f"- **Thickness Selected:** {selected_thickness}") 
         st.markdown(f"- **Square Footage (for pricing):** {sq_ft_used}")
         st.markdown(f"- **Slab Sq Ft (Aggregated for this Color/Location):** {selected_record.get('available_sq_ft', 0):.2f} sq.ft")
         st.markdown(f"- **Number of Unique Slabs (This Color/Location):** {selected_record.get('slab_count', 0)}")
@@ -350,7 +334,7 @@ if selected_record:
         st.markdown("--- Cost Components (before final markup & GST) ---")
         st.markdown(f"- **Material & Fabrication Cost Component:** ${costs.get('material_and_fab', 0):,.2f}")
         st.markdown(f"- **Installation Cost Component:** ${costs.get('install_cost', 0):,.2f}")
-        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost', 0):,.2f}") # IB often includes material at its base cost + fab
+        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost', 0):,.2f}") 
         st.markdown("--- Totals ---")
         st.markdown(f"- **Subtotal (Material, Fab, Install - before tax & final markup):** ${sub_total:,.2f}")
         st.markdown(f"- **GST ({GST_RATE*100:.0f}% on subtotal):** ${gst_amount:,.2f}")

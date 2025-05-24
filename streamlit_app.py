@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread # Used for Google Sheets API interaction
-from google.oauth2.service_account import Credentials # Though not directly used if service_account_from_dict works
+from google.oauth2.service_account import Credentials # This is imported by gspread, not directly used for auth in this pattern
 import json # Used to parse the service account JSON string from Streamlit secrets
 
 # --- Custom CSS for improved mobile readability ---
@@ -26,18 +26,18 @@ GST_RATE = 0.05
 FINAL_MARKUP_PERCENTAGE = 0.25
 
 # --- Google Sheets API Configuration ---
-# UPDATED SPREADSHEET_ID from the URL you just provided
+# CORRECTED SPREADSHEET_ID based on your provided URL
 SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 
-# --- Instrumented Function to load data (modified to use open_by_key) ---
+# --- Fully Instrumented Function to load data (modified to use open_by_key) ---
 @st.cache_data(show_spinner=False)
 def load_data_from_google_sheet(sheet_name_to_load):
     st.info("--- Starting data load process ---")
     st.info(f"Attempting to load data for sheet/tab: '{sheet_name_to_load}'")
 
     st.info("1. Attempting to load credentials from secrets...")
-    creds_dict = None
+    creds_dict = None # Initialize to avoid reference before assignment if first try fails
     try:
         creds_json_str = st.secrets["gcp_service_account"]
         creds_dict = json.loads(creds_json_str)
@@ -53,7 +53,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
         return None
 
     st.info(f"2. Attempting to authorize gspread using client_email: {creds_dict.get('client_email')}")
-    gc = None
+    gc = None # Initialize to avoid reference before assignment
     try:
         gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
         st.success(f"✅ 2. gspread client initialized. Type: {type(gc)}")
@@ -73,6 +73,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
     except Exception:
         pass # Ignore if dir fails for some reason on a problematic object
 
+    open_method = None
     if 'open_by_key' in gc_attributes:
         st.success("✅ 3. 'open_by_key' method IS AVAILABLE on 'gc' object. Proceeding with this method.")
         open_method = gc.open_by_key
@@ -141,47 +142,39 @@ def load_data_from_google_sheet(sheet_name_to_load):
         st.warning("⚠️ 6a. DataFrame is empty or None after fetching records.")
         return pd.DataFrame()
 
-st.info("7. Processing DataFrame...")
-try:
-    df.columns = df.columns.str.strip()
-    if "Serialized On Hand Cost" not in df.columns or "Available Sq Ft" not in df.columns:
-        st.error(f"❌ 7. Critical columns ('Serialized On Hand Cost' or 'Available Sq Ft') missing in sheet '{sheet_name_to_load}' after fetching. Columns found: {list(df.columns)}")
+    st.info("7. Processing DataFrame...")
+    try:
+        df.columns = df.columns.str.strip()
+        if "Serialized On Hand Cost" not in df.columns or "Available Sq Ft" not in df.columns:
+            st.error(f"❌ 7. Critical columns missing in '{sheet_name_to_load}'. Found: {list(df.columns)}")
+            return pd.DataFrame() 
+        
+        # Robust conversion for 'Serialized On Hand Cost'
+        df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$, ]", "", regex=True).str.strip()
+        df["Serialized On Hand Cost"] = pd.to_numeric(df["Serialized On Hand Cost"], errors='coerce')
+
+        # Robust conversion for 'Available Sq Ft'
+        df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
+
+        if "Serial Number" in df.columns:
+            df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
+        else:
+            st.info(f"ℹ️ 7. Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
+            df["Serial Number"] = 0 
+
+        # Drop rows where essential numeric columns became NaN or where Available Sq Ft is 0
+        df.dropna(subset=['Serialized On Hand Cost', 'Available Sq Ft'], inplace=True) 
+        df = df[df['Available Sq Ft'] > 0] 
+
+        if df.empty:
+            st.warning("⚠️ 7b. DataFrame is empty after cleaning and dropping rows with missing essential data.")
+            return pd.DataFrame()
+
+        st.success("✅ 7. DataFrame processing complete.")
+        return df
+    except Exception as e:
+        st.error(f"❌ 7. Error processing DataFrame: {e} (Type: {type(e)})")
         return pd.DataFrame()
-
-    # Clean and convert "Serialized On Hand Cost"
-    # First, remove currency symbols and commas, convert to string to ensure .str accessor works
-    df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$,]", "", regex=True).str.strip()
-    # Now convert to numeric, coercing errors (like empty strings) to NaN
-    df["Serialized On Hand Cost"] = pd.to_numeric(df["Serialized On Hand Cost"], errors='coerce')
-
-    # Clean and convert "Available Sq Ft"
-    df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
-
-    # Handle NaN values created by 'coerce' if necessary (e.g., fill with 0 or drop rows)
-    # For now, let's see if subsequent filters handle NaNs, or if we need to explicitly fill/drop.
-    # If unit_cost relies on these, NaNs might propagate.
-    # Example: df.fillna({'Serialized On Hand Cost': 0, 'Available Sq Ft': 0}, inplace=True)
-    # Or, more likely, you'll want to drop rows where these essential values are missing.
-
-    if "Serial Number" in df.columns:
-        df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
-    else:
-        st.info(f"ℹ️ 7. Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
-        df["Serial Number"] = 0
-
-    # Drop rows where essential numeric columns became NaN, or where Available Sq Ft is 0 (or less)
-    df.dropna(subset=['Serialized On Hand Cost', 'Available Sq Ft'], inplace=True)
-    df = df[df['Available Sq Ft'] > 0] # Also ensures Available Sq Ft is not zero before division for unit_cost
-
-    if df.empty:
-        st.warning("⚠️ 7a. DataFrame is empty after cleaning and dropping rows with missing essential data.")
-        return pd.DataFrame()
-
-    st.success("✅ 7. DataFrame processing complete.")
-    return df
-except Exception as e:
-    st.error(f"❌ 7. Error processing DataFrame: {e} (Type: {type(e)})")
-    return pd.DataFrame()
 
 # --- Cost Calculation Function (remains the same) ---
 def calculate_aggregated_costs(record, sq_ft_used):
@@ -206,8 +199,11 @@ def calculate_aggregated_costs(record, sq_ft_used):
 st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project.")
 
+# IMPORTANT: These names MUST exactly match the tab names in your Google Sheet for data loading!
+# Based on your screenshot, "Vernon data" is a tab, not "Vernon". Adjust as needed.
 branch_locations = ["InventoryData", "Vernon data", "Edmonton", "Saskatoon", "Abbotsford"] 
 selected_sheet_name = st.selectbox("Select Data Source (Sheet Tab Name)", branch_locations)
+
 
 with st.spinner(f"Loading inventory data for {selected_sheet_name}..."):
     df_inventory = load_data_from_google_sheet(selected_sheet_name) 
@@ -269,19 +265,17 @@ def get_fabrication_plant(sheet_or_branch_name):
 fabrication_plant = get_fabrication_plant(selected_sheet_name)
 st.markdown(f"**Assumed Fabrication Plant for '{selected_sheet_name}' source:** {fabrication_plant}")
 
+# Ensure required columns for unit_cost calculation exist and are valid
 if not ("Serialized On Hand Cost" in df_inventory.columns and \
-      "Available Sq Ft" in df_inventory.columns and \
-      not df_inventory[df_inventory['Available Sq Ft'] == 0].empty):
-    
-    if df_inventory.empty or \
-       'Available Sq Ft' not in df_inventory.columns or \
-       df_inventory['Available Sq Ft'].isnull().all() or \
-       (df_inventory['Available Sq Ft'] == 0).all():
-        st.error("No inventory with valid 'Available Sq Ft' to calculate unit cost. Cannot proceed.")
-        st.stop()
-df_inventory = df_inventory[df_inventory['Available Sq Ft'] != 0]
+      "Available Sq Ft" in df_inventory.columns): # Removed the .empty check here as it's done later
+    st.error("Critical columns 'Serialized On Hand Cost' or 'Available Sq Ft' are missing before unit cost calculation. Cannot proceed.")
+    st.stop()
+
+# Filter out zero or NaN Available Sq Ft before division
+df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna()] # Drop NaNs first
+df_inventory = df_inventory[df_inventory['Available Sq Ft'] > 0] # Then filter for > 0
 if df_inventory.empty:
-    st.error("All inventory items have zero 'Available Sq Ft' after filtering. Cannot calculate unit cost.")
+    st.error("All inventory items have zero or invalid 'Available Sq Ft' after filtering. Cannot calculate unit cost.")
     st.stop()
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
@@ -330,7 +324,7 @@ if not records:
 selected_record = st.selectbox("Select Material/Color", options=records,
                                format_func=lambda rec: f"{rec.get('Full Name', 'N/A')} ({rec.get('Location', 'N/A')}) - (${rec.get('final_price', 0) / sq_ft_used:.2f}/sq ft)")
 
-if selected_record: 
+if selected_record: # Check if a record is selected
     st.markdown(f"**Material:** {selected_record.get('Full Name', 'N/A')}")
     st.markdown(f"**Source Location:** {selected_record.get('Location', 'N/A')}")
     st.markdown(f"**Total Available Sq Ft (This Color/Location):** {selected_record.get('available_sq_ft', 0):.0f} sq.ft")

@@ -1,12 +1,5 @@
-pandas
-openpyxl
-requests
 streamlit
-python-dotenv
-gspread
-google-auth
-streamlit 
-pandas 
+pandas
 gspread>=5.0.0
-google-auth-oauthlib 
+google-auth-oauthlib
 google-api-python-client

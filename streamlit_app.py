@@ -59,13 +59,31 @@ def load_data_from_google_sheet(sheet_name_to_load): # Renamed argument for clar
             st.error(f"❌ Failed to initialize gspread client (gc = gspread.service_account_from_dict(...)): {e}")
             return None
 
+        # ... (after gc is initialized) ...
+        st.success(f"gspread client initialized. Type: {type(gc)}")
+
         # --- Debugging: Check if open_by_id attribute exists ---
         if not hasattr(gc, 'open_by_id'):
             st.error(f"❌ CRITICAL: 'gc' object (type: {type(gc)}) DOES NOT HAVE attribute 'open_by_id'.")
             st.warning("This strongly suggests an issue with the gspread library version or installation in the Streamlit Cloud environment, even if requirements.txt seems correct.")
-            # You could add this to see all available attributes if it fails:
-            # st.write(f"Available attributes/methods for 'gc' object: {dir(gc)}")
-            return None # Stop execution if this critical method is missing
+            
+            # --- ADD THESE LINES FOR MORE DETAIL ---
+            st.subheader("Inspecting the 'gc' object:")
+            st.write(f"Is 'gc' None? {gc is None}")
+            st.write("Methods and attributes available on 'gc' (first 20):")
+            try:
+                attributes = dir(gc)
+                st.code('\n'.join(attributes[:20])) # Show first 20
+                if len(attributes) > 20:
+                    st.write(f"... and {len(attributes) - 20} more.")
+                if 'open_by_id' in attributes:
+                    st.success("Further check: 'open_by_id' IS in dir(gc)!")
+                else:
+                    st.error("Further check: 'open_by_id' IS NOT in dir(gc)!")
+            except Exception as e_dir:
+                st.error(f"Could not get dir(gc): {e_dir}")
+            # --- END OF ADDED LINES ---
+            return None 
         else:
             st.success("✅ SUCCESS: 'gc' object HAS attribute 'open_by_id'. Proceeding to open sheet.")
         # --- End Debugging ---

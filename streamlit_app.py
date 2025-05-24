@@ -141,28 +141,47 @@ def load_data_from_google_sheet(sheet_name_to_load):
         st.warning("⚠️ 6a. DataFrame is empty or None after fetching records.")
         return pd.DataFrame()
 
-    st.info("7. Processing DataFrame...")
-    try:
-        df.columns = df.columns.str.strip()
-        if "Serialized On Hand Cost" not in df.columns or "Available Sq Ft" not in df.columns:
-            st.error(f"❌ 7. Critical columns missing in '{sheet_name_to_load}'. Found: {list(df.columns)}")
-            return pd.DataFrame() 
-        df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$, ]", "", regex=True).astype(float)
-        df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors="coerce")
-
-        if "Serial Number" in df.columns:
-            df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors="coerce").fillna(0).astype(int)
-        else:
-            st.info(f"ℹ️ 7. Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
-            df["Serial Number"] = 0 
-
-        df.dropna(subset=['Available Sq Ft'], inplace=True) 
-        df = df[df['Available Sq Ft'] > 0] 
-        st.success("✅ 7. DataFrame processing complete.")
-        return df
-    except Exception as e:
-        st.error(f"❌ 7. Error processing DataFrame: {e} (Type: {type(e)})")
+st.info("7. Processing DataFrame...")
+try:
+    df.columns = df.columns.str.strip()
+    if "Serialized On Hand Cost" not in df.columns or "Available Sq Ft" not in df.columns:
+        st.error(f"❌ 7. Critical columns ('Serialized On Hand Cost' or 'Available Sq Ft') missing in sheet '{sheet_name_to_load}' after fetching. Columns found: {list(df.columns)}")
         return pd.DataFrame()
+
+    # Clean and convert "Serialized On Hand Cost"
+    # First, remove currency symbols and commas, convert to string to ensure .str accessor works
+    df["Serialized On Hand Cost"] = df["Serialized On Hand Cost"].astype(str).str.replace("[\\$,]", "", regex=True).str.strip()
+    # Now convert to numeric, coercing errors (like empty strings) to NaN
+    df["Serialized On Hand Cost"] = pd.to_numeric(df["Serialized On Hand Cost"], errors='coerce')
+
+    # Clean and convert "Available Sq Ft"
+    df["Available Sq Ft"] = pd.to_numeric(df["Available Sq Ft"], errors='coerce')
+
+    # Handle NaN values created by 'coerce' if necessary (e.g., fill with 0 or drop rows)
+    # For now, let's see if subsequent filters handle NaNs, or if we need to explicitly fill/drop.
+    # If unit_cost relies on these, NaNs might propagate.
+    # Example: df.fillna({'Serialized On Hand Cost': 0, 'Available Sq Ft': 0}, inplace=True)
+    # Or, more likely, you'll want to drop rows where these essential values are missing.
+
+    if "Serial Number" in df.columns:
+        df["Serial Number"] = pd.to_numeric(df["Serial Number"], errors='coerce').fillna(0).astype(int)
+    else:
+        st.info(f"ℹ️ 7. Column 'Serial Number' not found in '{sheet_name_to_load}'. Defaulting to 0.")
+        df["Serial Number"] = 0
+
+    # Drop rows where essential numeric columns became NaN, or where Available Sq Ft is 0 (or less)
+    df.dropna(subset=['Serialized On Hand Cost', 'Available Sq Ft'], inplace=True)
+    df = df[df['Available Sq Ft'] > 0] # Also ensures Available Sq Ft is not zero before division for unit_cost
+
+    if df.empty:
+        st.warning("⚠️ 7a. DataFrame is empty after cleaning and dropping rows with missing essential data.")
+        return pd.DataFrame()
+
+    st.success("✅ 7. DataFrame processing complete.")
+    return df
+except Exception as e:
+    st.error(f"❌ 7. Error processing DataFrame: {e} (Type: {type(e)})")
+    return pd.DataFrame()
 
 # --- Cost Calculation Function (remains the same) ---
 def calculate_aggregated_costs(record, sq_ft_used):

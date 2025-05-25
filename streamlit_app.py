@@ -2,8 +2,8 @@ import streamlit as st
 import pandas as pd
 import gspread
 import json
-import smtplib # For sending emails
-from email.mime.text import MIMEText # For creating email messages
+import smtplib
+from email.mime.text import MIMEText 
 
 # --- Custom CSS ---
 st.markdown("""
@@ -28,7 +28,7 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 MASTER_INVENTORY_SHEET_TAB_NAME = "InventoryData"
 SALESPEOPLE_SHEET_TAB_NAME = "Salespeople"
 
-# --- Function to load data from Google Sheets (Cleaned up) ---
+# --- Function to load data from Google Sheets ---
 @st.cache_data(show_spinner=False)
 def load_data_from_google_sheet(sheet_name_to_load):
     creds_dict = None
@@ -36,32 +36,32 @@ def load_data_from_google_sheet(sheet_name_to_load):
         creds_json_str = st.secrets["gcp_service_account"]
         creds_dict = json.loads(creds_json_str)
     except KeyError:
-        st.error("❌ Config Error: 'gcp_service_account' secret missing. Contact admin.")
+        st.error("❌ Config Error: 'gcp_service_account' secret missing. App cannot access data. Please contact administrator.")
         return pd.DataFrame()
     except json.JSONDecodeError as jde:
-        st.error(f"❌ Config Error: Failed to parse Google credentials: {jde}. Contact admin.")
+        st.error(f"❌ Config Error: Failed to parse Google credentials: {jde}. Please contact administrator.")
         return pd.DataFrame()
     except Exception as e:
-        st.error(f"❌ Config Error: Issue loading credentials: {e}. Contact admin.")
+        st.error(f"❌ Config Error: Unexpected issue loading credentials: {e}. Please contact administrator.")
         return pd.DataFrame()
 
     gc = None
     try:
         gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
     except Exception as e:
-        st.error(f"❌ Connection Error: Failed to init Google Sheets client: {e}. Contact admin.")
+        st.error(f"❌ Connection Error: Failed to init Google Sheets client: {e}. Please contact administrator.")
         return pd.DataFrame()
 
     if gc is None:
-        st.error("❌ Connection Error: Google Sheets client is None. Contact admin.")
+        st.error("❌ Connection Error: Google Sheets client is None. Contact administrator.")
         return pd.DataFrame()
 
     open_method = None
-    gc_attributes = dir(gc)
+    gc_attributes = dir(gc) 
     if 'open_by_key' in gc_attributes: open_method = gc.open_by_key
     elif 'open_by_id' in gc_attributes: open_method = gc.open_by_id
     else:
-        st.error("❌ Library Error: Required gspread methods missing. Contact admin.")
+        st.error(f"❌ Critical Error: Required gspread methods not found on client object. App may be misconfigured. Please contact administrator.")
         return pd.DataFrame()
 
     spreadsheet = None
@@ -83,7 +83,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
     try:
         worksheet = spreadsheet.worksheet(sheet_name_to_load)
     except gspread.exceptions.WorksheetNotFound:
-        st.error(f"❌ Data Error: Sheet tab '{sheet_name_to_load}' not found in '{spreadsheet.title}'.")
+        st.error(f"❌ Data Error: Worksheet tab '{sheet_name_to_load}' not found in '{spreadsheet.title}'.")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"❌ Error: Unexpected issue opening worksheet '{sheet_name_to_load}': {e}.")
@@ -95,7 +95,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
     try:
         df = pd.DataFrame(worksheet.get_all_records())
     except Exception as e:
-        st.error(f"❌ Error: Could not get records from '{worksheet.title}': {e}.")
+        st.error(f"❌ Error: Could not retrieve records from '{worksheet.title}': {e}.")
         return pd.DataFrame()
 
     if df is None or df.empty:
@@ -112,7 +112,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
 
         missing_cols = [col for col in required_cols if col not in df.columns]
         if missing_cols:
-            st.error(f"❌ Data Error: Columns missing from '{sheet_name_to_load}': {', '.join(missing_cols)}.")
+            st.error(f"❌ Data Error: Critical data columns missing from '{sheet_name_to_load}': {', '.join(missing_cols)}. Found: {list(df.columns)}")
             return pd.DataFrame()
         
         if sheet_name_to_load == MASTER_INVENTORY_SHEET_TAB_NAME:
@@ -127,7 +127,7 @@ def load_data_from_google_sheet(sheet_name_to_load):
         elif sheet_name_to_load == SALESPEOPLE_SHEET_TAB_NAME:
             for col in required_cols: df[col] = df[col].astype(str).str.strip()
             df.dropna(subset=required_cols, inplace=True)
-            df = df[df['Email'].str.contains('@', na=False)] # Basic email format check
+            df = df[df['Email'].str.contains('@', na=False)] 
 
         if df.empty:
             st.warning(f"⚠️ No valid data in '{sheet_name_to_load}' after cleaning.")
@@ -148,7 +148,7 @@ def calculate_aggregated_costs(record, sq_ft_used):
     ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used
     return {"available_sq_ft": record.get("available_sq_ft", 0),"material_and_fab": material_and_fab,"install_cost": install_cost,"total_cost": total_cost,"ib_cost": ib_total_cost}
 
-# --- NEW: Function to Compose Email Body ---
+# --- Function to Compose Email Body ---
 def compose_breakdown_email_body(selected_branch, selected_record, costs, fabrication_plant, selected_edge_profile, selected_thickness, sq_ft_used, sub_total, gst_amount, final_price_marked_up):
     body = f"Countertop Estimate Details for Branch: {selected_branch}\n"
     body += "--------------------------------------------------\n"
@@ -173,27 +173,31 @@ def compose_breakdown_email_body(selected_branch, selected_record, costs, fabric
     body += "Generated by Countertop Cost Estimator."
     return body
 
-# --- NEW: Function to Send Email ---
+# --- Function to Send Email ---
 def send_email(subject, body, receiver_email):
     try:
-        sender_email = st.secrets["EMAIL_USER"] # This is your SMTP login, often also your allowed sender
-        password = st.secrets["EMAIL_PASSWORD"]
+        smtp_user = st.secrets["EMAIL_USER"] # SMTP login username
+        smtp_password = st.secrets["EMAIL_PASSWORD"]
         smtp_server = st.secrets["SMTP_SERVER"]
-        smtp_port = int(st.secrets["SMTP_PORT"]) # Ensure port is an integer
+        smtp_port = int(st.secrets["SMTP_PORT"])
 
-        if not receiver_email.lower().endswith("@floform.com"):
-            st.error("Error: Breakdown can only be sent to @floform.com email addresses.")
-            return False
+        # Use the verified sender email from secrets for the 'From' header
+        sender_from_header = st.secrets.get("SENDER_FROM_EMAIL", smtp_user) 
+        
+        # --- REMOVED: Recipient email domain validation ---
+        # if not receiver_email.lower().endswith("@floform.com"):
+        #     st.error("Error: Breakdown can only be sent to @floform.com email addresses.")
+        #     return False
 
         msg = MIMEText(body)
         msg['Subject'] = subject
-        msg['From'] = sender_email 
+        msg['From'] = sender_from_header 
         msg['To'] = receiver_email
 
         with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.starttls() # Secure the connection
-            server.login(sender_email, password)
-            server.sendmail(sender_email, receiver_email, msg.as_string())
+            server.starttls() 
+            server.login(smtp_user, smtp_password) 
+            server.sendmail(sender_from_header, receiver_email, msg.as_string()) 
         st.success(f"Breakdown emailed successfully to {receiver_email}!")
         return True
     except KeyError as e:
@@ -208,20 +212,20 @@ st.title("Countertop Cost Estimator")
 st.write("Get an accurate estimate for your custom countertop project.")
 
 df_master_inventory = None
-df_salespeople = pd.DataFrame() # Initialize as empty DataFrame
+df_salespeople = pd.DataFrame() 
 
-with st.spinner(f"Loading inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'..."):
+with st.spinner(f"Loading all inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'..."):
     df_master_inventory = load_data_from_google_sheet(MASTER_INVENTORY_SHEET_TAB_NAME) 
 with st.spinner(f"Loading salespeople data from '{SALESPEOPLE_SHEET_TAB_NAME}'..."):
     df_salespeople = load_data_from_google_sheet(SALESPEOPLE_SHEET_TAB_NAME)
 
-if df_master_inventory.empty: # Use .empty check for DataFrames
+if df_master_inventory.empty: 
     st.error(f"Could not load master inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'. App cannot proceed.")
     st.stop()
 if df_salespeople.empty:
     st.warning(f"⚠️ Could not load salespeople data. Emailing functionality will be limited/unavailable.")
+    df_salespeople = pd.DataFrame() 
 
-# Main app logic continues only if master inventory is loaded
 sales_branch_locations = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"] 
 selected_branch = st.selectbox("Select Your Branch Location", sales_branch_locations)
 
@@ -248,7 +252,7 @@ branch_to_material_sources = {
     "Edmonton": ["Edmonton", "Saskatoon"], "Saskatoon": ["Edmonton", "Saskatoon"], "Winnipeg": ["Edmonton", "Saskatoon"], 
 }
 allowed_locations_for_branch = branch_to_material_sources.get(selected_branch, [])
-df_inventory = pd.DataFrame() # Initialize
+df_inventory = pd.DataFrame() 
 if "Location" in df_master_inventory.columns:
     if allowed_locations_for_branch:
         df_inventory = df_master_inventory[df_master_inventory["Location"].isin(allowed_locations_for_branch)]
@@ -257,13 +261,12 @@ if "Location" in df_master_inventory.columns:
         df_inventory = df_master_inventory.copy()
 else:
     st.error("Master inventory is missing 'Location' column. Cannot filter by branch.")
-    df_inventory = df_master_inventory.copy() # Or stop
+    df_inventory = df_master_inventory.copy() 
 
 if df_inventory.empty: 
     st.warning(f"No inventory for branch '{selected_branch}' after location filter.")
     st.stop()
 
-# ... (Fabrication Plant, Thickness, Full Name, Unit Cost calculation as before) ...
 def get_fabrication_plant(branch): 
     if branch in ["Vernon", "Victoria", "Vancouver"]: return "Abbotsford"
     if branch in ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]: return "Saskatoon"
@@ -292,7 +295,6 @@ if df_inventory.empty: st.error("No inventory with valid 'Available Sq Ft'."); s
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
 
-# --- UI for selections and results ---
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
 sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
 if sq_ft_input < MINIMUM_SQ_FT: st.info(f"Minimum is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} for pricing.")
@@ -323,10 +325,17 @@ selected_record = st.selectbox("Select Material/Color", records, format_func=lam
 if selected_record: 
     st.markdown(f"**Material:** {selected_record.get('Full Name', 'N/A')}")
     st.markdown(f"**Source Location:** {selected_record.get('Location', 'N/A')}")
-    # ... (other markdown displays for selected_record) ...
+    st.markdown(f"**Total Available Sq Ft (This Color/Location):** {selected_record.get('available_sq_ft', 0):.0f} sq.ft")
+    st.markdown(f"**Number of Unique Slabs (This Color/Location):** {selected_record.get('slab_count', 0)}")
+    
+    search_term = selected_record.get('Full Name', '')
+    if search_term:
+        search_url = f"https://www.google.com/search?q={search_term.replace(' ', '+')}+countertop"
+        st.markdown(f"[🔎 Google Image Search for {search_term}]({search_url})")
+
     edge_profiles = ["Crescent", "Basin", "Boulder", "Volcanic", "Piedmont", "Summit", "Seacliff", "Alpine", "Treeline"]
-    default_edge_idx = edge_profiles.index("Seacliff") if "Seacliff" in edge_profiles else 0
-    selected_edge_profile = st.selectbox("Select Edge Profile", edge_profiles, index=default_edge_idx)
+    default_edge_index = edge_profiles.index("Seacliff") if "Seacliff" in edge_profiles else 0
+    selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles, index=default_edge_index)
 
     costs = calculate_aggregated_costs(selected_record, sq_ft_used)
     sub_total = costs["total_cost"]
@@ -340,43 +349,50 @@ if selected_record:
 
     if selected_record.get('slab_count', 0) > 1: st.info("Note: Multiple slabs used; color/pattern may vary.")
 
+    # --- DETAILED BREAKDOWN EXPANDER ---
     with st.expander("View Detailed Breakdown"):
-        # ... (Detailed breakdown markdown as before) ...
         st.markdown(f"- **Slab Selected:** {selected_record.get('Full Name', 'N/A')}")
         st.markdown(f"- **Material Source Location:** {selected_record.get('Location', 'N/A')}")
         st.markdown(f"- **Fabrication Plant (for selected branch '{selected_branch}'):** {fabrication_plant}") 
         st.markdown(f"- **Edge Profile Selected:** {selected_edge_profile}")
         st.markdown(f"- **Thickness Selected:** {selected_thickness}") 
         st.markdown(f"- **Square Footage (for pricing):** {sq_ft_used}")
-        # ... (add all other breakdown items) ...
+        st.markdown(f"- **Slab Sq Ft (Aggregated for this Color/Location):** {selected_record.get('available_sq_ft', 0):.2f} sq.ft")
+        st.markdown(f"- **Number of Unique Slabs (This Color/Location):** {selected_record.get('slab_count', 0)}")
+        st.markdown(f"- **Contributing Serial Numbers:** {selected_record.get('serial_numbers', 'N/A')}")
+        st.markdown("--- Cost Components (before final markup & GST) ---")
+        st.markdown(f"- **Material & Fabrication Cost Component:** ${costs.get('material_and_fab', 0):,.2f}")
+        st.markdown(f"- **Installation Cost Component:** ${costs.get('install_cost', 0):,.2f}")
+        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost', 0):,.2f}") 
+        st.markdown("--- Totals ---")
+        st.markdown(f"- **Subtotal (Material, Fab, Install - before tax & final markup):** ${sub_total:,.2f}")
+        st.markdown(f"- **GST ({GST_RATE*100:.0f}%):** ${gst_amount:,.2f}")
+        st.markdown(f"- **Total Including GST (before final markup):** ${(sub_total + gst_amount):,.2f}")
         st.markdown(f"- **Final Marked-up Price (including GST):** ${final_price_marked_up:,.2f}")
+        st.markdown(f"Calculation: ((Subtotal + GST) * (1 + {FINAL_MARKUP_PERCENTAGE*100:.0f}% Markup))")
 
     # --- Email Button Logic ---
     if selected_salesperson_email: 
         if st.button(f"Email Breakdown to {selected_salesperson_display}"):
-            if selected_salesperson_email.lower().endswith("@floform.com"):
-                email_subject = f"Countertop Estimate for {selected_branch} - {selected_record.get('Full Name', 'N/A')}"
-                email_body = compose_breakdown_email_body(
-                    selected_branch, selected_record, costs, fabrication_plant, 
-                    selected_edge_profile, selected_thickness, sq_ft_used, 
-                    sub_total, gst_amount, final_price_marked_up
-                )
-                # Assuming SMTP secrets are correctly set up in st.secrets
-                # sender_email_address = st.secrets.get("EMAIL_USER", "default_sender@example.com") # Fallback if not set
-                # Using SMTP login user as sender for now, Brevo might require a verified sender
-                
-                send_email(
-                    subject=email_subject,
-                    body=email_body,
-                    receiver_email=selected_salesperson_email
-                )
-            else:
-                st.error("Error: Selected salesperson email is not a valid @floform.com address.")
-    elif selected_salesperson_display != "None": # A salesperson was selected in dropdown but email couldn't be parsed
+            # Domain validation is removed for testing, but ensure it's re-added for production
+            # if selected_salesperson_email.lower().endswith("@floform.com"):
+            email_subject = f"Countertop Estimate for {selected_branch} - {selected_record.get('Full Name', 'N/A')}"
+            email_body = compose_breakdown_email_body(
+                selected_branch, selected_record, costs, fabrication_plant, 
+                selected_edge_profile, selected_thickness, sq_ft_used, 
+                sub_total, gst_amount, final_price_marked_up
+            )
+            send_email(
+                subject=email_subject,
+                body=email_body,
+                receiver_email=selected_salesperson_email
+            )
+            # else:
+            #     st.error("Error: Selected salesperson email is not a valid @floform.com address.")
+    elif selected_salesperson_display != "None": 
         st.warning(f"Could not determine a valid email for {selected_salesperson_display} to send breakdown.")
-
 
 else: st.info("Please make a material selection to see price details and breakdown.")
 
 st.markdown("---")
-st.caption(f"Estimator. Branch: '{selected_branch}'. Data: '{MASTER_INVENTORY_SHEET_TAB_NAME}'. Time: {pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S %Z')}")
+st.caption(f"Estimator. Branch: '{selected_branch}'. Data sourced from '{MASTER_INVENTORY_SHEET_TAB_NAME}'. Time: {pd.Timestamp.now(tz='UTC').strftime('%Y-%m-%d %H:%M:%S %Z')}")

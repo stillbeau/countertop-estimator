@@ -4,6 +4,7 @@ import gspread
 import json
 import smtplib
 from email.mime.text import MIMEText 
+from email.mime.multipart import MIMEMultipart 
 import pytz # Import pytz for timezone handling
 
 # --- Custom CSS ---
@@ -21,10 +22,13 @@ INSTALL_COST_PER_SQFT = 20
 FABRICATION_COST_PER_SQFT = 17
 ADDITIONAL_IB_RATE = 0
 GST_RATE = 0.05
-FINAL_MARKUP_PERCENTAGE = 0.25
+# Removed: FINAL_MARKUP_PERCENTAGE = 0.25 # This is now conditional
+
+# --- NEW: Big Box Markup Configuration ---
+BIG_BOX_MARKUP_PERCENTAGE = 0.25 # 25% markup for big box stores
 
 # --- Google Sheets API Configuration ---
-SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ" # Corrected ID
+SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 MASTER_INVENTORY_SHEET_TAB_NAME = "InventoryData"
 SALESPEOPLE_SHEET_TAB_NAME = "Salespeople"
@@ -143,86 +147,122 @@ def calculate_aggregated_costs(record, sq_ft_used):
     unit_cost = record.get("unit_cost", 0); unit_cost = 0 if unit_cost is None else unit_cost
     material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
-    material_and_fab = material_cost_with_markup + fabrication_total
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_used
-    total_cost = material_and_fab + install_cost
-    ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used
-    return {"available_sq_ft": record.get("available_sq_ft", 0),"material_and_fab": material_and_fab,"install_cost": install_cost,"total_cost": total_cost,"ib_cost": ib_total_cost}
+    
+    # total_cost here is material_and_fab + install_cost + ib_cost
+    total_cost = material_cost_with_markup + fabrication_total + install_cost + record.get('ib_cost', 0) # Use the ib_cost directly from record if available, else 0
+    ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used # This is the IB calculation
 
-# --- Function to Compose Email Body (CLEANER FORMATTING) ---
-def compose_breakdown_email_body(selected_branch, selected_record, costs, fabrication_plant, selected_edge_profile, selected_thickness, sq_ft_used, sub_total, gst_amount, final_price_marked_up):
-    # Use consistent formatting for currency
-    def format_currency(value):
+    return {
+        "available_sq_ft": record.get("available_sq_ft", 0),
+        "material_and_fab": material_cost_with_markup + fabrication_total, # M&F component
+        "install_cost": install_cost, # Installation component
+        "ib_cost_component": ib_total_cost, # IB component (separate from material_and_fab + install_cost total)
+        "total_cost_before_optional_markup": material_cost_with_markup + fabrication_total + install_cost + ib_total_cost # Sum all basic components
+    }
+
+# --- Function to Compose HTML Email Body ---
+def compose_breakdown_email_body(selected_branch, selected_record, costs, fabrication_plant, selected_edge_profile, selected_thickness, sq_ft_used, base_sub_total, gst_amount, final_price_marked_up, big_box_markup_applied=False, big_box_markup_percentage=0):
+    # Helper for consistent currency formatting in HTML
+    def format_currency_html(value):
         return f"${value:,.2f}"
 
-    body = f"Subject: Countertop Estimate for {selected_branch} - {selected_record.get('Full Name', 'N/A')}\n\n" # Subject in body as well for clarity
-    body += "Dear Valued Customer / Salesperson,\n\n"
-    body += "Please find below the detailed estimate for your countertop project:\n\n"
-
-    # --- Project & Material Overview ---
-    body += "=================================================\n"
-    body += "           PROJECT & MATERIAL OVERVIEW\n"
-    body += "=================================================\n"
-    body += f"Branch Location:          {selected_branch}\n"
-    body += f"Slab Selected:            {selected_record.get('Full Name', 'N/A')}\n"
-    body += f"Material Source Location: {selected_record.get('Location', 'N/A')}\n"
-    body += f"Fabrication Plant:        {fabrication_plant}\n"
-    body += f"Edge Profile Selected:    {selected_edge_profile}\n"
-    body += f"Thickness Selected:       {selected_thickness}\n"
-    body += f"Square Footage (for pricing): {sq_ft_used} sq.ft\n"
-    body += f"Slab Sq Ft (Aggregated):  {selected_record.get('available_sq_ft', 0):.2f} sq.ft\n"
-    body += f"Number of Unique Slabs:   {selected_record.get('slab_count', 0)}\n"
-    body += f"Contributing Serial Numbers: {selected_record.get('serial_numbers', 'N/A')}\n\n"
-
-    # --- Cost Components ---
-    body += "=================================================\n"
-    body += "                 COST COMPONENTS\n"
-    body += "=================================================\n"
-    body += f"Material & Fabrication:   {format_currency(costs.get('material_and_fab', 0))}\n"
-    body += f"Installation:             {format_currency(costs.get('install_cost', 0))}\n"
-    body += f"IB Cost Component:        {format_currency(costs.get('ib_cost', 0))}\n\n"
-
-    # --- Totals ---
-    body += "=================================================\n"
-    body += "                     TOTALS\n"
-    body += "=================================================\n"
-    body += f"Subtotal (before tax & final markup): {format_currency(sub_total)}\n"
-    body += f"GST ({GST_RATE*100:.0f}%):                    {format_currency(gst_amount)}\n"
-    body += "-------------------------------------------------\n"
-    body += f"Total Including GST:      {format_currency(sub_total + gst_amount)}\n"
-    body += f"Final Marked-up Price:    {format_currency(final_price_marked_up)}\n"
-    body += "=================================================\n\n"
-    body += "(Calculation: ((Subtotal + GST) * (1 + Final Markup Percentage)))\n"
-    body += f"(Final Markup Percentage: {FINAL_MARKUP_PERCENTAGE*100:.0f}%)\n\n"
-    body += "Thank you for using our Countertop Cost Estimator!\n"
-    body += "--------------------------------------------------\n"
-    
-    # Ensure pytz is installed if you use it for timezones. pip install pytz
+    # Get local time for timestamp
     vancouver_tz = pytz.timezone('America/Vancouver')
-    body += f"Generated on: {pd.Timestamp.now(tz=vancouver_tz).strftime('%Y-%m-%d %H:%M:%S %Z')}"
+    generated_time = pd.Timestamp.now(tz=vancouver_tz).strftime('%Y-%m-%d %H:%M:%S %Z')
 
-    return body
+    markup_details = ""
+    if big_box_markup_applied:
+        markup_details = f"""
+        <tr><td>Applied Big Box Markup ({big_box_markup_percentage*100:.0f}%):</td><td>Yes</td></tr>
+        """
+
+    html_body = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+            .container {{ width: 100%; max-width: 600px; margin: 0 auto; background-color: #f9f9f9; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
+            h1 {{ color: #0056b3; font-size: 24px; margin-bottom: 10px; }}
+            h2 {{ color: #0056b3; font-size: 20px; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 20px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+            th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+            th {{ background-color: #e9e9e9; }}
+            .total-row td {{ font-weight: bold; background-color: #e0e0e0; }}
+            .grand-total-row td {{ font-weight: bold; background-color: #c9e0ff; font-size: 18px; }}
+            .note {{ font-size: 12px; color: #666; margin-top: 15px; }}
+            .footer {{ font-size: 10px; color: #999; text-align: center; margin-top: 30px; padding-top: 10px; border-top: 1px solid #eee; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Countertop Estimate Details</h1>
+            <p>Dear Valued Customer / Salesperson,</p>
+            <p>Please find below the detailed estimate for your countertop project:</p>
+
+            <h2>Project & Material Overview</h2>
+            <table>
+                <tr><th>Detail</th><th>Value</th></tr>
+                <tr><td>Branch Location:</td><td>{selected_branch}</td></tr>
+                <tr><td>Slab Selected:</td><td>{selected_record.get('Full Name', 'N/A')}</td></tr>
+                <tr><td>Material Source Location:</td><td>{selected_record.get('Location', 'N/A')}</td></tr>
+                <tr><td>Fabrication Plant:</td><td>{fabrication_plant}</td></tr>
+                <tr><td>Edge Profile Selected:</td><td>{selected_edge_profile}</td></tr>
+                <tr><td>Thickness Selected:</td><td>{selected_thickness}</td></tr>
+                <tr><td>Square Footage (for pricing):</td><td>{sq_ft_used} sq.ft</td></tr>
+                <tr><td>Slab Sq Ft (Aggregated):</td><td>{selected_record.get('available_sq_ft', 0):.2f} sq.ft</td></tr>
+                <tr><td>Number of Unique Slabs:</td><td>{selected_record.get('slab_count', 0)}</td></tr>
+                <tr><td>Contributing Serial Numbers:</td><td>{selected_record.get('serial_numbers', 'N/A')}</td></tr>
+            </table>
+
+            <h2>Cost Components</h2>
+            <table>
+                <tr><th>Component</th><th>Amount</th></tr>
+                <tr><td>Material & Fabrication:</td><td>{format_currency_html(costs.get('material_and_fab', 0))}</td></tr>
+                <tr><td>Installation:</td><td>{format_currency_html(costs.get('install_cost', 0))}</td></tr>
+                <tr><td>IB Cost Component:</td><td>{format_currency_html(costs.get('ib_cost_component', 0))}</td></tr>
+            </table>
+
+            <h2>Totals</h2>
+            <table>
+                <tr><th>Description</th><th>Amount</th></tr>
+                <tr><td>Subtotal (before tax & final markup):</td><td>{format_currency_html(base_sub_total)}</td></tr>
+                <tr><td>GST ({GST_RATE*100:.0f}%):</td><td>{format_currency_html(gst_amount)}</td></tr>
+                {markup_details} <tr class="total-row"><td>Total Including GST:</td><td>{format_currency_html(base_sub_total + gst_amount)}</td></tr>
+                <tr class="grand-total-row"><td>Final Marked-up Price:</td><td>{format_currency_html(final_price_marked_up)}</td></tr>
+            </table>
+            <div class="note">
+                <p>Note: Prices are estimates and subject to change.</p>
+            </div>
+
+            <p>Thank you for using our Countertop Cost Estimator!</p>
+            <div class="footer">
+                Generated by Countertop Cost Estimator on: {generated_time}
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_body
 
 # --- Function to Send Email ---
 def send_email(subject, body, receiver_email):
     try:
-        smtp_user = st.secrets["EMAIL_USER"] # SMTP login username
+        smtp_user = st.secrets["EMAIL_USER"]
         smtp_password = st.secrets["EMAIL_PASSWORD"]
         smtp_server = st.secrets["SMTP_SERVER"]
         smtp_port = int(st.secrets["SMTP_PORT"])
 
-        # Use the verified sender email from secrets for the 'From' header
         sender_from_header = st.secrets.get("SENDER_FROM_EMAIL", smtp_user) 
         
-        # Recipient email domain validation is removed for testing (re-add for production if needed)
-        # if not receiver_email.lower().endswith("@floform.com"):
-        #     st.error("Error: Breakdown can only be sent to @floform.com email addresses.")
-        #     return False
+        # No recipient domain validation for testing
 
-        msg = MIMEText(body)
+        msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = sender_from_header 
         msg['To'] = receiver_email
+
+        msg.attach(MIMEText(body, 'html')) # Specify 'html' subtype
 
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.starttls() 
@@ -338,7 +378,7 @@ required_material = sq_ft_used * 1.1
 df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
 if df_agg.empty: st.error("No colors have enough material (inc. buffer)."); st.stop()
 
-df_agg["final_price_calculated"] = df_agg.apply(lambda r: calculate_aggregated_costs(r,sq_ft_used)["total_cost"]*(1+GST_RATE),axis=1)
+df_agg["final_price_calculated"] = df_agg.apply(lambda r: calculate_aggregated_costs(r,sq_ft_used)["total_cost_before_optional_markup"],axis=1) # Updated
 df_valid = df_agg[df_agg["final_price_calculated"] > 0] 
 if df_valid.empty: st.error("No valid slab prices after calculations."); st.stop()
 
@@ -368,14 +408,35 @@ if selected_record:
     selected_edge_profile = st.selectbox("Select Edge Profile", options=edge_profiles, index=default_edge_index)
 
     costs = calculate_aggregated_costs(selected_record, sq_ft_used)
-    sub_total = costs["total_cost"]
+    
+    # --- NEW: Big Box Markup Logic ---
+    apply_big_box_markup = st.checkbox(f"Apply {BIG_BOX_MARKUP_PERCENTAGE*100:.0f}% Big Box Store Markup (Excludes IB)")
+    
+    # Calculate components that get marked up
+    markup_base_cost_components = costs.get('material_and_fab', 0) + costs.get('install_cost', 0)
+    
+    # Calculate the markup amount
+    big_box_markup_amount = 0
+    if apply_big_box_markup:
+        big_box_markup_amount = markup_base_cost_components * BIG_BOX_MARKUP_PERCENTAGE
+
+    # Subtotal calculation (now includes the optional big box markup if applied)
+    # The sub_total is the total before GST and *after* any optional markup
+    sub_total = costs.get('total_cost_before_optional_markup', 0) + big_box_markup_amount
+
     gst_amount = sub_total * GST_RATE
-    final_price_marked_up = (sub_total + gst_amount) * (1 + FINAL_MARKUP_PERCENTAGE)
+    final_price_display = sub_total + gst_amount # Price shown before final markup, but now the final_price_calculated already includes it
+
+    # The final price is the one displayed and emailed
+    final_price_after_all_calculations = sub_total + gst_amount # Sum of all components + GST + optional big box markup
 
     with st.expander("View Subtotal & GST"):
-        st.markdown(f"**Subtotal (before tax & final markup):** ${sub_total:,.2f}")
+        st.markdown(f"**Subtotal (Material, Fab, Install, IB):** ${costs.get('total_cost_before_optional_markup', 0):,.2f}")
+        if apply_big_box_markup:
+            st.markdown(f"**Big Box Markup ({BIG_BOX_MARKUP_PERCENTAGE*100:.0f}% on Material/Fab/Install):** ${big_box_markup_amount:,.2f}")
+        st.markdown(f"**Subtotal (After Optional Markup, Before GST):** ${sub_total:,.2f}")
         st.markdown(f"**GST ({GST_RATE*100:.0f}%):** ${gst_amount:,.2f}")
-    st.markdown(f"### Your Total Estimated Price: :green[${final_price_marked_up:,.2f}]")
+    st.markdown(f"### Your Total Estimated Price: :green[${final_price_after_all_calculations:,.2f}]")
 
     if selected_record.get('slab_count', 0) > 1: st.info("Note: Multiple slabs used; color/pattern may vary.")
 
@@ -390,35 +451,38 @@ if selected_record:
         st.markdown(f"- **Slab Sq Ft (Aggregated for this Color/Location):** {selected_record.get('available_sq_ft', 0):.2f} sq.ft")
         st.markdown(f"- **Number of Unique Slabs (This Color/Location):** {selected_record.get('slab_count', 0)}")
         st.markdown(f"- **Contributing Serial Numbers:** {selected_record.get('serial_numbers', 'N/A')}")
-        st.markdown("--- Cost Components (before final markup & GST) ---")
+        st.markdown("--- Cost Components (before optional markup & GST) ---")
         st.markdown(f"- **Material & Fabrication Cost Component:** ${costs.get('material_and_fab', 0):,.2f}")
         st.markdown(f"- **Installation Cost Component:** ${costs.get('install_cost', 0):,.2f}")
-        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost', 0):,.2f}") 
+        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost_component', 0):,.2f}") # Use ib_cost_component
+        
+        if apply_big_box_markup:
+            st.markdown(f"- **Applied Big Box Markup ({BIG_BOX_MARKUP_PERCENTAGE*100:.0f}%):** ${big_box_markup_amount:,.2f}")
+        
         st.markdown("--- Totals ---")
-        st.markdown(f"- **Subtotal (Material, Fab, Install - before tax & final markup):** ${sub_total:,.2f}")
+        st.markdown(f"- **Subtotal (Material, Fab, Install, IB - before optional markup & GST):** ${costs.get('total_cost_before_optional_markup', 0):,.2f}")
+        st.markdown(f"- **Subtotal (After Optional Markup, Before GST):** ${sub_total:,.2f}")
         st.markdown(f"- **GST ({GST_RATE*100:.0f}%):** ${gst_amount:,.2f}")
-        st.markdown(f"- **Total Including GST (before final markup):** ${(sub_total + gst_amount):,.2f}")
-        st.markdown(f"- **Final Marked-up Price (including GST):** ${final_price_marked_up:,.2f}")
-        st.markdown(f"Calculation: ((Subtotal + GST) * (1 + {FINAL_MARKUP_PERCENTAGE*100:.0f}% Markup))")
+        st.markdown(f"- **Final Estimated Price (including GST):** ${final_price_after_all_calculations:,.2f}")
 
     # --- Email Button Logic ---
     if selected_salesperson_email: 
         if st.button(f"Email Breakdown to {selected_salesperson_display}"):
-            # Domain validation is removed for testing, but ensure it's re-added for production
-            # if selected_salesperson_email.lower().endswith("@floform.com"):
             email_subject = f"Countertop Estimate for {selected_branch} - {selected_record.get('Full Name', 'N/A')}"
+            
+            # Pass new markup-related variables to compose_breakdown_email_body
             email_body = compose_breakdown_email_body(
                 selected_branch, selected_record, costs, fabrication_plant, 
                 selected_edge_profile, selected_thickness, sq_ft_used, 
-                sub_total, gst_amount, final_price_marked_up
+                costs.get('total_cost_before_optional_markup', 0), # This is the subtotal before optional markup + GST
+                gst_amount, final_price_after_all_calculations, # This is the final displayed price
+                apply_big_box_markup, BIG_BOX_MARKUP_PERCENTAGE # Pass markup status
             )
             send_email(
                 subject=email_subject,
                 body=email_body,
                 receiver_email=selected_salesperson_email
             )
-            # else:
-            #     st.error("Error: Selected salesperson email is not a valid @floform.com address.")
     elif selected_salesperson_display != "None": 
         st.warning(f"Could not determine a valid email for {selected_salesperson_display} to send breakdown.")
 

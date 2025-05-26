@@ -22,9 +22,9 @@ INSTALL_COST_PER_SQFT = 20
 FABRICATION_COST_PER_SQFT = 17
 ADDITIONAL_IB_RATE = 0
 GST_RATE = 0.05
-# Removed: FINAL_MARKUP_PERCENTAGE = 0.25 # This is now conditional
+# Removed: FINAL_MARKUP_PERCENTAGE constant
 
-# --- NEW: Big Box Markup Configuration ---
+# --- Big Box Markup Configuration ---
 BIG_BOX_MARKUP_PERCENTAGE = 0.25 # 25% markup for big box stores
 
 # --- Google Sheets API Configuration ---
@@ -149,20 +149,22 @@ def calculate_aggregated_costs(record, sq_ft_used):
     fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
     install_cost = INSTALL_COST_PER_SQFT * sq_ft_used
     
-    # total_cost here is material_and_fab + install_cost + ib_cost
-    total_cost = material_cost_with_markup + fabrication_total + install_cost + record.get('ib_cost', 0) # Use the ib_cost directly from record if available, else 0
-    ib_total_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used # This is the IB calculation
+    # ib_total_cost is the IB component calculation, not part of total_cost_before_optional_markup
+    ib_cost_component = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used 
+
+    # total_cost_before_optional_markup is the sum of all primary components before any optional markup
+    total_cost_before_optional_markup = material_cost_with_markup + fabrication_total + install_cost + ib_cost_component
 
     return {
         "available_sq_ft": record.get("available_sq_ft", 0),
         "material_and_fab": material_cost_with_markup + fabrication_total, # M&F component
         "install_cost": install_cost, # Installation component
-        "ib_cost_component": ib_total_cost, # IB component (separate from material_and_fab + install_cost total)
-        "total_cost_before_optional_markup": material_cost_with_markup + fabrication_total + install_cost + ib_total_cost # Sum all basic components
+        "ib_cost_component": ib_cost_component, # IB component
+        "total_cost_before_optional_markup": total_cost_before_optional_markup # Sum of all basic components
     }
 
 # --- Function to Compose HTML Email Body ---
-def compose_breakdown_email_body(selected_branch, selected_record, costs, fabrication_plant, selected_edge_profile, selected_thickness, sq_ft_used, base_sub_total, gst_amount, final_price_marked_up, big_box_markup_applied=False, big_box_markup_percentage=0):
+def compose_breakdown_email_body(job_name, selected_branch, selected_record, costs, fabrication_plant, selected_edge_profile, selected_thickness, sq_ft_used, base_sub_total, gst_amount, final_price_marked_up, big_box_markup_applied=False, big_box_markup_percentage=0):
     # Helper for consistent currency formatting in HTML
     def format_currency_html(value):
         return f"${value:,.2f}"
@@ -174,8 +176,10 @@ def compose_breakdown_email_body(selected_branch, selected_record, costs, fabric
     markup_details = ""
     if big_box_markup_applied:
         markup_details = f"""
-        <tr><td>Applied Big Box Markup ({big_box_markup_percentage*100:.0f}%):</td><td>Yes</td></tr>
+        <tr><td style="font-weight: bold;">Applied Big Box Markup ({big_box_markup_percentage*100:.0f}%):</td><td>Yes</td></tr>
         """
+    
+    job_name_display = job_name if job_name else "Unnamed Job" # Use 'Unnamed Job' if blank
 
     html_body = f"""
     <html>
@@ -203,6 +207,7 @@ def compose_breakdown_email_body(selected_branch, selected_record, costs, fabric
             <h2>Project & Material Overview</h2>
             <table>
                 <tr><th>Detail</th><th>Value</th></tr>
+                <tr><td>Job Name:</td><td>{job_name_display}</td></tr>
                 <tr><td>Branch Location:</td><td>{selected_branch}</td></tr>
                 <tr><td>Slab Selected:</td><td>{selected_record.get('Full Name', 'N/A')}</td></tr>
                 <tr><td>Material Source Location:</td><td>{selected_record.get('Location', 'N/A')}</td></tr>
@@ -226,10 +231,12 @@ def compose_breakdown_email_body(selected_branch, selected_record, costs, fabric
             <h2>Totals</h2>
             <table>
                 <tr><th>Description</th><th>Amount</th></tr>
-                <tr><td>Subtotal (before tax & final markup):</td><td>{format_currency_html(base_sub_total)}</td></tr>
+                <tr><td>Subtotal (before optional markup & GST):</td><td>{format_currency_html(costs.get('total_cost_before_optional_markup', 0))}</td></tr>
+                {"" if not big_box_markup_applied else f'<tr><td style="font-weight: bold;">Big Box Markup ({big_box_markup_percentage*100:.0f}%):</td><td>{format_currency_html(big_box_markup_percentage * (costs.get("material_and_fab", 0) + costs.get("install_cost", 0)))}</td></tr>'}
+                <tr><td>Subtotal (After Optional Markup, Before GST):</td><td>{format_currency_html(base_sub_total)}</td></tr>
                 <tr><td>GST ({GST_RATE*100:.0f}%):</td><td>{format_currency_html(gst_amount)}</td></tr>
-                {markup_details} <tr class="total-row"><td>Total Including GST:</td><td>{format_currency_html(base_sub_total + gst_amount)}</td></tr>
-                <tr class="grand-total-row"><td>Final Marked-up Price:</td><td>{format_currency_html(final_price_marked_up)}</td></tr>
+                <tr class="total-row"><td>Total Including GST:</td><td>{format_currency_html(base_sub_total + gst_amount)}</td></tr>
+                <tr class="grand-total-row"><td>Final Estimated Price:</td><td>{format_currency_html(final_price_marked_up)}</td></tr>
             </table>
             <div class="note">
                 <p>Note: Prices are estimates and subject to change.</p>
@@ -255,7 +262,10 @@ def send_email(subject, body, receiver_email):
 
         sender_from_header = st.secrets.get("SENDER_FROM_EMAIL", smtp_user) 
         
-        # No recipient domain validation for testing
+        # Recipient email domain validation is removed for testing (re-add for production if needed)
+        # if not receiver_email.lower().endswith("@floform.com"):
+        #     st.error("Error: Breakdown can only be sent to @floform.com email addresses.")
+        #     return False
 
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
@@ -305,14 +315,17 @@ selected_salesperson_display = "None"
 if not df_salespeople.empty:
     salespeople_in_branch_df = df_salespeople[df_salespeople["Branch"].astype(str).str.lower() == selected_branch.lower()]
     if not salespeople_in_branch_df.empty:
-        salesperson_options = salespeople_in_branch_df.apply(lambda x: f"{x['SalespersonName']} ({x['Email']})", axis=1).tolist()
+        # Hiding email addresses in dropdown
+        salesperson_options = salespeople_in_branch_df['SalespersonName'].tolist()
+        
         selected_salesperson_display = st.selectbox(f"Select Salesperson in {selected_branch} (for Email)", options=["None"] + salesperson_options)
         if selected_salesperson_display != "None":
-            try:
-                start_index = selected_salesperson_display.rfind('(') + 1
-                end_index = selected_salesperson_display.rfind(')')
-                selected_salesperson_email = selected_salesperson_display[start_index:end_index]
-            except Exception: selected_salesperson_email = None 
+            # Look up email based on selected name
+            selected_salesperson_row = salespeople_in_branch_df[salespeople_in_branch_df['SalespersonName'] == selected_salesperson_display]
+            if not selected_salesperson_row.empty:
+                selected_salesperson_email = selected_salesperson_row['Email'].iloc[0] # .iloc[0] in case of non-unique names, takes first match
+            else:
+                selected_salesperson_email = None # Should not happen if data is clean
     else: st.caption(f"No salespeople listed for {selected_branch} branch.")
 else: st.caption("Salespeople data not loaded or empty.")
 
@@ -378,7 +391,7 @@ required_material = sq_ft_used * 1.1
 df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
 if df_agg.empty: st.error("No colors have enough material (inc. buffer)."); st.stop()
 
-df_agg["final_price_calculated"] = df_agg.apply(lambda r: calculate_aggregated_costs(r,sq_ft_used)["total_cost_before_optional_markup"],axis=1) # Updated
+df_agg["final_price_calculated"] = df_agg.apply(lambda r: calculate_aggregated_costs(r,sq_ft_used)["total_cost_before_optional_markup"],axis=1) 
 df_valid = df_agg[df_agg["final_price_calculated"] > 0] 
 if df_valid.empty: st.error("No valid slab prices after calculations."); st.stop()
 
@@ -409,26 +422,19 @@ if selected_record:
 
     costs = calculate_aggregated_costs(selected_record, sq_ft_used)
     
-    # --- NEW: Big Box Markup Logic ---
+    # --- Big Box Markup Logic ---
     apply_big_box_markup = st.checkbox(f"Apply {BIG_BOX_MARKUP_PERCENTAGE*100:.0f}% Big Box Store Markup (Excludes IB)")
     
-    # Calculate components that get marked up
     markup_base_cost_components = costs.get('material_and_fab', 0) + costs.get('install_cost', 0)
     
-    # Calculate the markup amount
     big_box_markup_amount = 0
     if apply_big_box_markup:
         big_box_markup_amount = markup_base_cost_components * BIG_BOX_MARKUP_PERCENTAGE
 
-    # Subtotal calculation (now includes the optional big box markup if applied)
-    # The sub_total is the total before GST and *after* any optional markup
     sub_total = costs.get('total_cost_before_optional_markup', 0) + big_box_markup_amount
 
     gst_amount = sub_total * GST_RATE
-    final_price_display = sub_total + gst_amount # Price shown before final markup, but now the final_price_calculated already includes it
-
-    # The final price is the one displayed and emailed
-    final_price_after_all_calculations = sub_total + gst_amount # Sum of all components + GST + optional big box markup
+    final_price_after_all_calculations = sub_total + gst_amount 
 
     with st.expander("View Subtotal & GST"):
         st.markdown(f"**Subtotal (Material, Fab, Install, IB):** ${costs.get('total_cost_before_optional_markup', 0):,.2f}")
@@ -440,53 +446,34 @@ if selected_record:
 
     if selected_record.get('slab_count', 0) > 1: st.info("Note: Multiple slabs used; color/pattern may vary.")
 
-    # --- DETAILED BREAKDOWN EXPANDER ---
-    with st.expander("View Detailed Breakdown"):
-        st.markdown(f"- **Slab Selected:** {selected_record.get('Full Name', 'N/A')}")
-        st.markdown(f"- **Material Source Location:** {selected_record.get('Location', 'N/A')}")
-        st.markdown(f"- **Fabrication Plant (for selected branch '{selected_branch}'):** {fabrication_plant}") 
-        st.markdown(f"- **Edge Profile Selected:** {selected_edge_profile}")
-        st.markdown(f"- **Thickness Selected:** {selected_thickness}") 
-        st.markdown(f"- **Square Footage (for pricing):** {sq_ft_used}")
-        st.markdown(f"- **Slab Sq Ft (Aggregated for this Color/Location):** {selected_record.get('available_sq_ft', 0):.2f} sq.ft")
-        st.markdown(f"- **Number of Unique Slabs (This Color/Location):** {selected_record.get('slab_count', 0)}")
-        st.markdown(f"- **Contributing Serial Numbers:** {selected_record.get('serial_numbers', 'N/A')}")
-        st.markdown("--- Cost Components (before optional markup & GST) ---")
-        st.markdown(f"- **Material & Fabrication Cost Component:** ${costs.get('material_and_fab', 0):,.2f}")
-        st.markdown(f"- **Installation Cost Component:** ${costs.get('install_cost', 0):,.2f}")
-        st.markdown(f"- **IB Cost Component (Industry Base):** ${costs.get('ib_cost_component', 0):,.2f}") # Use ib_cost_component
-        
-        if apply_big_box_markup:
-            st.markdown(f"- **Applied Big Box Markup ({BIG_BOX_MARKUP_PERCENTAGE*100:.0f}%):** ${big_box_markup_amount:,.2f}")
-        
-        st.markdown("--- Totals ---")
-        st.markdown(f"- **Subtotal (Material, Fab, Install, IB - before optional markup & GST):** ${costs.get('total_cost_before_optional_markup', 0):,.2f}")
-        st.markdown(f"- **Subtotal (After Optional Markup, Before GST):** ${sub_total:,.2f}")
-        st.markdown(f"- **GST ({GST_RATE*100:.0f}%):** ${gst_amount:,.2f}")
-        st.markdown(f"- **Final Estimated Price (including GST):** ${final_price_after_all_calculations:,.2f}")
+    # --- REMOVED: View Detailed Breakdown Expander from App UI ---
+    # This content is now only sent in the email.
+
+    # --- Job Name Field ---
+    job_name = st.text_input("Job Name (Optional)", "")
 
     # --- Email Button Logic ---
     if selected_salesperson_email: 
         if st.button(f"Email Breakdown to {selected_salesperson_display}"):
-            email_subject = f"Countertop Estimate for {selected_branch} - {selected_record.get('Full Name', 'N/A')}"
+            # Email Subject now includes Job Name
+            email_subject_text = f"Countertop Estimate for {job_name if job_name else 'Unnamed Job'} - {selected_record.get('Full Name', 'N/A')} ({selected_branch})"
             
-            # Pass new markup-related variables to compose_breakdown_email_body
             email_body = compose_breakdown_email_body(
-                selected_branch, selected_record, costs, fabrication_plant, 
+                job_name, selected_branch, selected_record, costs, fabrication_plant, 
                 selected_edge_profile, selected_thickness, sq_ft_used, 
                 costs.get('total_cost_before_optional_markup', 0), # This is the subtotal before optional markup + GST
                 gst_amount, final_price_after_all_calculations, # This is the final displayed price
                 apply_big_box_markup, BIG_BOX_MARKUP_PERCENTAGE # Pass markup status
             )
             send_email(
-                subject=email_subject,
+                subject=email_subject_text, # Use the new subject text
                 body=email_body,
                 receiver_email=selected_salesperson_email
             )
     elif selected_salesperson_display != "None": 
         st.warning(f"Could not determine a valid email for {selected_salesperson_display} to send breakdown.")
 
-else: st.info("Please make a material selection to see price details and breakdown.")
+else: st.info("Please make a material selection to see price details.") # Adjusted message
 
 st.markdown("---")
 st.caption(f"Estimator. Branch: '{selected_branch}'. Data sourced from '{MASTER_INVENTORY_SHEET_TAB_NAME}'. Time: {pd.Timestamp.now(tz='America/Vancouver').strftime('%Y-%m-%d %H:%M:%S %Z')}")

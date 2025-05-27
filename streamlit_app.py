@@ -410,21 +410,6 @@ if selected_record:
     # --- Email Button Logic ---
     if selected_salesperson_email: 
         if st.button(f"Email Breakdown to {selected_salesperson_display}"):
-            # --- DEBUG PRINTS ---
-            st.write("--- DEBUG INFO FOR EMAIL COMPOSITION ---")
-            st.write(f"Job Name: {job_name} (Type: {type(job_name)})")
-            st.write(f"Selected Branch: {selected_branch} (Type: {type(selected_branch)})")
-            st.write(f"Selected Record: (Type: {type(selected_record)})") # Dict, too long to print all
-            st.write(f"Costs Dict: (Type: {type(costs)})") # Dict
-            st.write(f"Fabrication Plant: {fabrication_plant} (Type: {type(fabrication_plant)})")
-            st.write(f"Selected Thickness: {selected_thickness} (Type: {type(selected_thickness)})")
-            st.write(f"Sq Ft Used: {sq_ft_used} (Type: {type(sq_ft_used)})")
-            st.write(f"Additional Costs Input: {additional_costs_input} (Type: {type(additional_costs_input)})")
-            st.write(f"Sub Total Before GST (passed as base_sub_total_after_additions): {sub_total_before_gst} (Type: {type(sub_total_before_gst)})")
-            st.write(f"GST Amount: {gst_amount} (Type: {type(gst_amount)})")
-            st.write(f"Final Price For Customer (passed as final_price_with_all_costs): {final_price_for_customer} (Type: {type(final_price_for_customer)})")
-            st.write("--- END DEBUG INFO ---")
-            # --- END DEBUG PRINTS ---
 
             email_subject_text = f"Countertop Estimate: {job_name if job_name else 'Unnamed Job'} - {selected_record.get('Full Name', 'N/A')} ({selected_branch})"
             

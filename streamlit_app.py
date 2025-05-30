@@ -1,16 +1,15 @@
 import streamlit as st
 import pandas as pd
 import gspread
-import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pytz
 
-# --- MUST BE FIRST STREAMLIT COMMAND ---
+# --- Must be first Streamlit call ---
 st.set_page_config(page_title="CounterPro Estimator", layout="centered")
 
-# --- Custom CSS ---
+# --- Styling ---
 st.markdown("""
     <style>
     div[data-baseweb="select"] { font-size: 0.8rem; }
@@ -18,7 +17,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Configurations ---
+# --- Configs ---
 MINIMUM_SQ_FT = 35
 MARKUP_FACTOR = 1.25
 INSTALL_COST_PER_SQFT = 27
@@ -26,15 +25,13 @@ FABRICATION_COST_PER_SQFT = 17
 ADDITIONAL_IB_RATE = 0
 GST_RATE = 0.05
 SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
-SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
 MASTER_INVENTORY_SHEET_TAB_NAME = "InventoryData"
-SALESPEOPLE_SHEET_TAB_NAME = "Salespeople"
 
 @st.cache_data(show_spinner=False)
 def load_data_from_google_sheet(sheet_name_to_load):
     try:
         creds_dict = st.secrets["gcp_service_account"]
-        gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
+        gc = gspread.service_account_from_dict(creds_dict)
         spreadsheet = gc.open_by_key(SPREADSHEET_ID)
         worksheet = spreadsheet.worksheet(sheet_name_to_load)
         df = pd.DataFrame(worksheet.get_all_records())
@@ -58,6 +55,7 @@ def calculate_aggregated_costs(record, sq_ft_used):
         "total_customer_facing_base_cost": total_customer_facing_base_cost
     }
 
+# --- UI ---
 st.title("CounterPro")
 st.write("Get an accurate estimate for your custom countertop project.")
 
@@ -65,22 +63,24 @@ df_inventory = load_data_from_google_sheet(MASTER_INVENTORY_SHEET_TAB_NAME)
 if df_inventory.empty:
     st.stop()
 
-# --- Validate and clean Full Name fields ---
-if "Brand" not in df_inventory.columns or "Color" not in df_inventory.columns:
-    st.error("Missing 'Brand' or 'Color' column."); st.stop()
+# --- Validate and clean Brand, Color, Full Name ---
 df_inventory["Brand"] = df_inventory["Brand"].astype(str).str.strip()
 df_inventory["Color"] = df_inventory["Color"].astype(str).str.strip()
 df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
 
-# --- Cost Calculations ---
-if "Serialized On Hand Cost" not in df_inventory.columns or "Available Sq Ft" not in df_inventory.columns:
-    st.error("Missing costing columns."); st.stop()
-df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna() & (df_inventory['Available Sq Ft'] > 0)]
+# --- Safely convert Available Sq Ft ---
+df_inventory["Available Sq Ft"] = pd.to_numeric(df_inventory["Available Sq Ft"], errors="coerce")
+df_inventory = df_inventory[df_inventory["Available Sq Ft"].notna() & (df_inventory["Available Sq Ft"] > 0)]
+
+# --- Unit cost and price ---
+df_inventory["Serialized On Hand Cost"] = pd.to_numeric(df_inventory["Serialized On Hand Cost"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
 df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
+# --- Square footage input ---
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
 sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
 
+# --- Calculate total pricing ---
 df_inventory["price"] = df_inventory.apply(lambda r: calculate_aggregated_costs(r, sq_ft_used)["total_customer_facing_base_cost"], axis=1)
 options = df_inventory.to_dict("records")
 selected = st.selectbox("Choose a material", options, format_func=lambda r: f"{r['Full Name']} - ${r['price']:.2f}")
@@ -89,3 +89,6 @@ if selected:
     costs = calculate_aggregated_costs(selected, sq_ft_used)
     st.markdown(f"**Material:** {selected['Full Name']}")
     st.markdown(f"**Total Cost Estimate:** ${costs['total_customer_facing_base_cost']:,.2f}")
+    st.markdown(f"**Material + Fab:** ${costs['base_material_and_fab_component']:,.2f}")
+    st.markdown(f"**Install:** ${costs['base_install_cost_component']:,.2f}")
+    st.markdown(f"**IB Cost (internal only):** ${costs['ib_cost_component']:,.2f}")

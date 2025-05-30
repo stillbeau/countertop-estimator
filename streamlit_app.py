@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pytz
 
-st.set_page_config(page_title="CounterPro Estimator", layout="centered")
+st.set_page_config(page_title="CounterPro", layout="centered")
 
 st.markdown("""
     <style>
@@ -75,8 +75,8 @@ def send_email(subject, body, to_email):
     except Exception as e:
         st.error(f"Email failed: {e}")
 
-st.title("CounterPro Estimator")
-st.write("Generate countertop pricing with email quote functionality.")
+st.title("CounterPro")
+st.write("Get an accurate estimate for your custom countertop project.")
 
 df_inventory = load_sheet(INVENTORY_TAB)
 df_salespeople = load_sheet(SALESPEOPLE_TAB)
@@ -96,13 +96,21 @@ sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=
 sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
 
 df_inventory["price"] = df_inventory.apply(lambda r: calculate_cost(r, sq_ft_used)["total_customer"], axis=1)
+
+# --- Add slider for max job cost ---
+min_price = int(df_inventory["price"].min())
+max_price = int(df_inventory["price"].max())
+max_budget = st.slider("Max Job Cost ($)", min_price, max_price, max_price, step=100)
+df_inventory = df_inventory[df_inventory["price"] <= max_budget]
+
 options = df_inventory.to_dict("records")
 selected = st.selectbox("Choose a material", options, format_func=lambda r: f"{r['Full Name']} - ${r['price']:.2f}")
 
-# Salesperson logic
+# --- Salesperson and Branch ---
 selected_email = None
 if not df_salespeople.empty:
-    branch_list = df_salespeople["Branch"].dropna().unique().tolist()
+    df_salespeople["Branch"] = df_salespeople["Branch"].astype(str).str.strip().str.title()
+    branch_list = sorted(df_salespeople["Branch"].dropna().unique().tolist())
     selected_branch = st.selectbox("Select Branch", branch_list)
     branch_salespeople = df_salespeople[df_salespeople["Branch"] == selected_branch]
     salesperson_names = ["None"] + branch_salespeople["SalespersonName"].tolist()
@@ -113,6 +121,9 @@ if not df_salespeople.empty:
 if selected:
     costs = calculate_cost(selected, sq_ft_used)
     st.markdown(f"**Material:** {selected['Full Name']}")
+    st.markdown(f"**Source Location:** {selected.get('Location', 'N/A')}")
+    search_query = selected['Full Name'].replace(" ", "+")
+    st.markdown(f"[ð Google Image Search for {selected['Full Name']}](https://www.google.com/search?q={search_query}+countertop)")
     st.markdown(f"**Total Estimate:** ${costs['total_customer']:,.2f}")
 
     job_name = st.text_input("Job Name (optional)")

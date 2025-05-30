@@ -1,20 +1,16 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import json
 import smtplib
-import pytz
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+import pytz
 
-# --- Set Page Config FIRST ---
-st.set_page_config(
-    page_title="CounterPro Estimator",
-    page_icon="🧱",
-    layout="centered",
-    initial_sidebar_state="auto"
-)
+# --- MUST BE FIRST STREAMLIT COMMAND ---
+st.set_page_config(page_title="CounterPro Estimator", layout="centered")
 
-# --- Styling ---
+# --- Custom CSS ---
 st.markdown("""
     <style>
     div[data-baseweb="select"] { font-size: 0.8rem; }
@@ -22,7 +18,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- Configs ---
+# --- Configurations ---
 MINIMUM_SQ_FT = 35
 MARKUP_FACTOR = 1.25
 INSTALL_COST_PER_SQFT = 27
@@ -30,138 +26,66 @@ FABRICATION_COST_PER_SQFT = 17
 ADDITIONAL_IB_RATE = 0
 GST_RATE = 0.05
 SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
-INVENTORY_TAB = "InventoryData"
-SALESPEOPLE_TAB = "Salespeople"
+SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+MASTER_INVENTORY_SHEET_TAB_NAME = "InventoryData"
+SALESPEOPLE_SHEET_TAB_NAME = "Salespeople"
 
-# --- Load Google Sheet Data ---
 @st.cache_data(show_spinner=False)
-def load_sheet(tab):
+def load_data_from_google_sheet(sheet_name_to_load):
     try:
-        creds = st.secrets["gcp_service_account"]  # ✅ Already parsed as dict
-        gc = gspread.service_account_from_dict(creds)
-        sh = gc.open_by_key(SPREADSHEET_ID)
-        ws = sh.worksheet(tab)
-        df = pd.DataFrame(ws.get_all_records())
+        creds_dict = st.secrets["gcp_service_account"]
+        gc = gspread.service_account_from_dict(creds_dict, scopes=SCOPES)
+        spreadsheet = gc.open_by_key(SPREADSHEET_ID)
+        worksheet = spreadsheet.worksheet(sheet_name_to_load)
+        df = pd.DataFrame(worksheet.get_all_records())
         df.columns = df.columns.str.strip()
         return df
     except Exception as e:
-        st.error(f"Failed to load Google Sheet tab '{tab}': {e}")
+        st.error(f"Failed to load sheet '{sheet_name_to_load}': {e}")
         return pd.DataFrame()
 
-# --- Cost Calculation ---
-def calculate_cost(record, sq_ft):
-    unit_cost = record.get("unit_cost", 0)
-    material_cost = unit_cost * MARKUP_FACTOR * sq_ft
-    fabrication = FABRICATION_COST_PER_SQFT * sq_ft
-    install = INSTALL_COST_PER_SQFT * sq_ft
-    ib_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft
+def calculate_aggregated_costs(record, sq_ft_used):
+    unit_cost = record.get("unit_cost", 0) or 0
+    material_cost_with_markup = unit_cost * MARKUP_FACTOR * sq_ft_used
+    fabrication_total = FABRICATION_COST_PER_SQFT * sq_ft_used
+    install_cost = INSTALL_COST_PER_SQFT * sq_ft_used
+    ib_cost_component = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft_used
+    total_customer_facing_base_cost = material_cost_with_markup + fabrication_total + install_cost
     return {
-        "material_and_fab": material_cost + fabrication,
-        "install": install,
-        "ib_cost": ib_cost,
-        "total_customer": material_cost + fabrication + install
+        "base_material_and_fab_component": material_cost_with_markup + fabrication_total,
+        "base_install_cost_component": install_cost,
+        "ib_cost_component": ib_cost_component,
+        "total_customer_facing_base_cost": total_customer_facing_base_cost
     }
 
-# --- Email Breakdown ---
-def send_email(subject, body, to_email):
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = st.secrets["SENDER_FROM_EMAIL"]
-        msg["To"] = to_email
-        msg.attach(MIMEText(body, "html"))
+st.title("CounterPro")
+st.write("Get an accurate estimate for your custom countertop project.")
 
-        recipients = [to_email]
-        if "QUOTE_TRACKING_CC_EMAIL" in st.secrets:
-            msg["Cc"] = st.secrets["QUOTE_TRACKING_CC_EMAIL"]
-            recipients.append(st.secrets["QUOTE_TRACKING_CC_EMAIL"])
-
-        with smtplib.SMTP(st.secrets["SMTP_SERVER"], st.secrets["SMTP_PORT"]) as server:
-            server.starttls()
-            server.login(st.secrets["EMAIL_USER"], st.secrets["EMAIL_PASSWORD"])
-            server.sendmail(msg["From"], recipients, msg.as_string())
-
-        st.success("✅ Quote emailed successfully.")
-    except Exception as e:
-        st.error(f"Email send failed: {e}")
-
-# --- App UI ---
-st.title("CounterPro Estimator")
-st.write("Generate accurate countertop pricing based on inventory and branch settings.")
-
-inventory = load_sheet(INVENTORY_TAB)
-salespeople = load_sheet(SALESPEOPLE_TAB)
-
-if inventory.empty:
+df_inventory = load_data_from_google_sheet(MASTER_INVENTORY_SHEET_TAB_NAME)
+if df_inventory.empty:
     st.stop()
 
-# --- Branch & Salesperson Selection ---
-branches = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"]
-branch = st.selectbox("Branch", branches)
+# --- Validate and clean Full Name fields ---
+if "Brand" not in df_inventory.columns or "Color" not in df_inventory.columns:
+    st.error("Missing 'Brand' or 'Color' column."); st.stop()
+df_inventory["Brand"] = df_inventory["Brand"].astype(str).str.strip()
+df_inventory["Color"] = df_inventory["Color"].astype(str).str.strip()
+df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
 
-salesperson_email = None
-salesperson_list = salespeople[salespeople["Branch"].str.lower() == branch.lower()]
-if not salesperson_list.empty:
-    names = ["None"] + salesperson_list["SalespersonName"].tolist()
-    selection = st.selectbox("Salesperson (for emailing)", names)
-    if selection != "None":
-        row = salesperson_list[salesperson_list["SalespersonName"] == selection]
-        if not row.empty:
-            salesperson_email = row.iloc[0]["Email"]
+# --- Cost Calculations ---
+if "Serialized On Hand Cost" not in df_inventory.columns or "Available Sq Ft" not in df_inventory.columns:
+    st.error("Missing costing columns."); st.stop()
+df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna() & (df_inventory['Available Sq Ft'] > 0)]
+df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
-# --- Material Filtering ---
-inventory = inventory[inventory["Location"].isin(["Vernon", "Abbotsford", "Edmonton", "Saskatoon"])]
-inventory["Full Name"] = inventory["Brand"] + " - " + inventory["Color"]
-inventory["unit_cost"] = inventory["Serialized On Hand Cost"] / inventory["Available Sq Ft"]
+sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
+sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
 
-thicknesses = inventory["Thickness"].dropna().unique().tolist()
-selected_thickness = st.selectbox("Select Thickness", sorted(thicknesses))
-inventory = inventory[inventory["Thickness"] == selected_thickness]
+df_inventory["price"] = df_inventory.apply(lambda r: calculate_aggregated_costs(r, sq_ft_used)["total_customer_facing_base_cost"], axis=1)
+options = df_inventory.to_dict("records")
+selected = st.selectbox("Choose a material", options, format_func=lambda r: f"{r['Full Name']} - ${r['price']:.2f}")
 
-sq_ft = st.number_input("Square Footage", value=40, min_value=1)
-sq_ft_used = max(sq_ft, MINIMUM_SQ_FT)
-
-# --- Material Selection ---
-inventory = inventory[inventory["Available Sq Ft"] >= sq_ft_used * 1.1]
-agg = inventory.groupby(["Full Name", "Location"]).agg({
-    "Available Sq Ft": "sum",
-    "unit_cost": "mean"
-}).reset_index()
-
-if agg.empty:
-    st.warning("No slabs available for required square footage.")
-    st.stop()
-
-agg["Estimated Price"] = agg["unit_cost"].apply(lambda u: (u * MARKUP_FACTOR + FABRICATION_COST_PER_SQFT + INSTALL_COST_PER_SQFT) * sq_ft_used)
-max_price = st.slider("Max Budget", int(agg["Estimated Price"].min()), int(agg["Estimated Price"].max()), int(agg["Estimated Price"].max()))
-agg = agg[agg["Estimated Price"] <= max_price]
-
-selected_row = st.selectbox("Select Material", agg.to_dict("records"), format_func=lambda r: f"{r['Full Name']} ({r['Location']}) - ${r['Estimated Price']:.2f}")
-
-if selected_row:
-    st.markdown(f"**Selected Slab:** {selected_row['Full Name']} from {selected_row['Location']}")
-    costs = calculate_cost(selected_row, sq_ft_used)
-
-    add_cost = st.number_input("Additional Costs (sinks, plumbing)", value=0.0)
-    subtotal = costs["total_customer"] + add_cost
-    gst = subtotal * GST_RATE
-    total = subtotal + gst
-
-    st.markdown(f"### Final Quote: ${total:,.2f}")
-    st.markdown(f"- Material & Fab: ${costs['material_and_fab']:,.2f}")
-    st.markdown(f"- Install: ${costs['install']:,.2f}")
-    st.markdown(f"- Add-ons: ${add_cost:,.2f}")
-    st.markdown(f"- GST: ${gst:,.2f}")
-
-    job_name = st.text_input("Job Name (optional)")
-
-    if salesperson_email and st.button("Email Quote"):
-        body = f"""
-        <h2>Quote for {job_name or 'Unnamed Job'}</h2>
-        <p><strong>Material:</strong> {selected_row['Full Name']}<br>
-        <strong>Location:</strong> {selected_row['Location']}<br>
-        <strong>Square Feet:</strong> {sq_ft_used} sq.ft<br>
-        <strong>Total Price:</strong> ${total:,.2f}</p>
-        """
-        subject = f"CounterPro Quote - {job_name or 'Unnamed Job'}"
-        send_email(subject, body, salesperson_email)
+if selected:
+    costs = calculate_aggregated_costs(selected, sq_ft_used)
+    st.markdown(f"**Material:** {selected['Full Name']}")
+    st.markdown(f"**Total Cost Estimate:** ${costs['total_customer_facing_base_cost']:,.2f}")

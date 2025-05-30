@@ -6,9 +6,8 @@ import pytz
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
-# --- Configure Page ---
+# --- Page config & CSS ---
 st.set_page_config(page_title="CounterPro", layout="centered")
-
 st.markdown("""
     <style>
     div[data-baseweb="select"] { font-size: 0.8rem; }
@@ -23,11 +22,12 @@ INSTALL_COST_PER_SQFT = 27
 FABRICATION_COST_PER_SQFT = 17
 ADDITIONAL_IB_RATE = 0
 GST_RATE = 0.05
+
 SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 INVENTORY_TAB = "InventoryData"
 SALESPEOPLE_TAB = "Salespeople"
 
-# --- Load Google Sheets Data ---
+# --- Helpers ---
 @st.cache_data(show_spinner=False)
 def load_sheet(tab):
     try:
@@ -38,56 +38,103 @@ def load_sheet(tab):
         df.columns = df.columns.str.strip()
         return df
     except Exception as e:
-        st.error(f"Failed to load Google Sheet tab '{tab}': {e}")
+        st.error(f"Failed to load '{tab}': {e}")
         return pd.DataFrame()
 
-# --- Cost Calculation ---
-def calculate_cost(record, sq_ft):
-    unit_cost = record.get("unit_cost", 0)
-    material_cost = unit_cost * MARKUP_FACTOR * sq_ft
-    fabrication = FABRICATION_COST_PER_SQFT * sq_ft
-    install = INSTALL_COST_PER_SQFT * sq_ft
-    ib_cost = (unit_cost + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft
+def calculate_cost(rec, sq_ft):
+    uc = rec.get("unit_cost", 0) or 0
+    mat = uc * MARKUP_FACTOR * sq_ft
+    fab = FABRICATION_COST_PER_SQFT * sq_ft
+    ins = INSTALL_COST_PER_SQFT * sq_ft
+    ib  = (uc + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq_ft
     return {
-        "material_and_fab": material_cost + fabrication,
-        "install": install,
-        "ib_cost": ib_cost,
-        "total_customer": material_cost + fabrication + install
+      "base_material_and_fab_component": mat + fab,
+      "base_install_cost_component": ins,
+      "ib_cost_component": ib,
+      "total_customer_facing_base_cost": mat + fab + ins
     }
 
-# --- Email Composition ---
-def compose_email(job_name, selected_branch, selected_record, costs, sq_ft_used, additional_costs, subtotal, gst, total):
-    def fmt(val): return f"${val:,.2f}"
+def compose_breakdown_email_body(
+    job_name,
+    selected_branch,
+    selected_salesperson,
+    rec,
+    costs,
+    fab_plant,
+    thickness,
+    sq_ft,
+    additional,
+    subtotal,
+    gst_amt,
+    final_total
+):
+    def fmt(v): return f"${v:,.2f}"
     tz = pytz.timezone("America/Vancouver")
-    timestamp = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
-    return f"""
-    <html><body>
-    <h2>CounterPro Estimate</h2>
-    <p><strong>Job Name:</strong> {job_name or 'Unnamed Job'}<br>
-    <strong>Branch:</strong> {selected_branch}<br>
-    <strong>Material:</strong> {selected_record['Full Name']}<br>
-    <strong>Location:</strong> {selected_record.get('Location', 'N/A')}<br>
-    <strong>Square Footage:</strong> {sq_ft_used} sq.ft</p>
-    <h3>Cost Breakdown</h3>
-    <ul>
-        <li>Material & Fabrication: {fmt(costs['material_and_fab'])}</li>
-        <li>Install: {fmt(costs['install'])}</li>
-        <li>Additional Costs: {fmt(additional_costs)}</li>
-        <li>Subtotal: {fmt(subtotal)}</li>
-        <li>GST (5%): {fmt(gst)}</li>
-        <li><strong>Total: {fmt(total)}</strong></li>
-    </ul>
-    <p>Generated on {timestamp}</p>
-    </body></html>
-    """
+    gen_time = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+    job_disp = job_name or "Unnamed Job"
 
-# --- Send Email ---
+    return f"""<html>
+  <head><style>
+    body {{font-family:Arial,sans-serif;color:#333}}
+    .container {{max-width:600px;margin:auto;padding:20px}}
+    h1 {{color:#0056b3;margin-bottom:4px}}
+    p.meta {{margin-top:0;font-size:0.95rem;color:#555}}
+    h2 {{color:#0056b3;border-bottom:1px solid #eee;padding-bottom:5px}}
+    table {{width:100%;border-collapse:collapse;margin:10px 0}}
+    th,td {{padding:8px;text-align:left;border-bottom:1px solid #ddd}}
+    th {{background:#f0f0f0}}
+    .grand-total-row td {{font-weight:bold;background:#c9e0ff;font-size:1rem}}
+    .footer {{font-size:10px;color:#666;text-align:center;margin-top:20px}}
+  </style></head>
+  <body><div class="container">
+    <h1>CounterPro Estimate</h1>
+    <p class="meta">
+      <strong>Branch:</strong> {selected_branch} &nbsp;&nbsp;
+      <strong>Salesperson:</strong> {selected_salesperson}
+    </p>
+
+    <h2>Project &amp; Material Overview</h2>
+    <table>
+      <tr><th>Detail</th><th>Value</th></tr>
+      <tr><td>Job Name:</td><td>{job_disp}</td></tr>
+      <tr><td>Slab Selected:</td><td>{rec.get("Full Name","N/A")}</td></tr>
+      <tr><td>Material Source:</td><td>{rec.get("Location","N/A")}</td></tr>
+      <tr><td>Fabrication Plant:</td><td>{fab_plant}</td></tr>
+      <tr><td>Thickness:</td><td>{thickness}</td></tr>
+      <tr><td>Sq Ft (for pricing):</td><td>{sq_ft} sq.ft</td></tr>
+      <tr><td>Slab Sq Ft (Total):</td><td>{rec.get("available_sq_ft",0):.2f} sq.ft</td></tr>
+      <tr><td>Unique Slabs:</td><td>{rec.get("slab_count",0)}</td></tr>
+      <tr><td>Serial Numbers:</td><td>{rec.get("serial_numbers","N/A")}</td></tr>
+    </table>
+
+    <h2>Cost Components</h2>
+    <table>
+      <tr><th>Component</th><th>Amount</th></tr>
+      <tr><td>Material &amp; Fabrication:</td><td>{fmt(costs["base_material_and_fab_component"])}</td></tr>
+      <tr><td>Installation:</td><td>{fmt(costs["base_install_cost_component"])}</td></tr>
+      <tr><td>IB Cost (Internal):</td><td>{fmt(costs["ib_cost_component"])}</td></tr>
+    </table>
+
+    <h2>Totals</h2>
+    <table>
+      <tr><th>Description</th><th>Amount</th></tr>
+      <tr><td>Base Estimate:</td><td>{fmt(costs["total_customer_facing_base_cost"])}</td></tr>
+      <tr><td>Additional Costs (sinks, tile, plumbing):</td><td>{fmt(additional)}</td></tr>
+      <tr><td>Subtotal:</td><td>{fmt(subtotal)}</td></tr>
+      <tr><td>GST (5%):</td><td>{fmt(gst_amt)}</td></tr>
+      <tr class="grand-total-row"><td>Final Total:</td><td>{fmt(final_total)}</td></tr>
+    </table>
+
+    <div class="footer">Generated by CounterPro on {gen_time}</div>
+  </div></body>
+</html>"""
+
 def send_email(subject, body, to_email):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = st.secrets["SENDER_FROM_EMAIL"]
-        msg["To"] = to_email
+        msg["From"]    = st.secrets["SENDER_FROM_EMAIL"]
+        msg["To"]      = to_email
         msg.attach(MIMEText(body, "html"))
 
         recipients = [to_email]
@@ -107,73 +154,118 @@ def send_email(subject, body, to_email):
 
 # --- App UI ---
 st.title("CounterPro")
-st.write("Get an accurate estimate for your custom countertop project.")
 
-df_inventory = load_sheet(INVENTORY_TAB)
+# Branch & Salesperson at top
 df_salespeople = load_sheet(SALESPEOPLE_TAB)
-
-if df_inventory.empty:
-    st.stop()
-
-# --- Prepare Inventory Data ---
-df_inventory["Brand"] = df_inventory["Brand"].astype(str).str.strip()
-df_inventory["Color"] = df_inventory["Color"].astype(str).str.strip()
-df_inventory["Full Name"] = df_inventory["Brand"] + " - " + df_inventory["Color"]
-df_inventory["Available Sq Ft"] = pd.to_numeric(df_inventory["Available Sq Ft"], errors="coerce")
-df_inventory["Serialized On Hand Cost"] = pd.to_numeric(df_inventory["Serialized On Hand Cost"].astype(str).str.replace(r"[\$,]", "", regex=True), errors="coerce")
-df_inventory = df_inventory[df_inventory["Available Sq Ft"].notna() & (df_inventory["Available Sq Ft"] > 0)]
-df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
-
-# --- Square Foot Input ---
-sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
-sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
-
-df_inventory["price"] = df_inventory.apply(lambda r: calculate_cost(r, sq_ft_used)["total_customer"], axis=1)
-
-# --- Budget Slider ---
-min_price = int(df_inventory["price"].min())
-max_price = int(df_inventory["price"].max())
-max_budget = st.slider("Max Job Cost ($)", min_price, max_price, max_price, step=100)
-df_inventory = df_inventory[df_inventory["price"] <= max_budget]
-
-# --- Material Selection ---
-options = df_inventory.to_dict("records")
-selected = st.selectbox("Choose a material", options, format_func=lambda r: f"{r['Full Name']} - ${r['price']:.2f}")
-
-# --- Salesperson and Branch ---
 selected_email = None
 if not df_salespeople.empty:
-    df_salespeople["Branch"] = df_salespeople["Branch"].astype(str).str.strip().str.title()
-    branch_list = sorted(df_salespeople["Branch"].dropna().unique())
-    selected_branch = st.selectbox("Select Branch", branch_list)
-    branch_salespeople = df_salespeople[df_salespeople["Branch"] == selected_branch]
-    salesperson_names = ["None"] + branch_salespeople["SalespersonName"].tolist()
-    selected_salesperson = st.selectbox("Select Salesperson", salesperson_names)
-    if selected_salesperson != "None":
-        selected_email = branch_salespeople[branch_salespeople["SalespersonName"] == selected_salesperson]["Email"].values[0]
+    df_salespeople["Branch"] = (
+        df_salespeople["Branch"]
+        .astype(str).str.strip().str.title()
+    )
+    branches = sorted(df_salespeople["Branch"].dropna().unique())
+    selected_branch = st.selectbox("Select Branch", branches)
+    sales = df_salespeople[df_salespeople["Branch"] == selected_branch]
+    names = ["None"] + sales["SalespersonName"].tolist()
+    sel_name = st.selectbox("Select Salesperson", names)
+    if sel_name != "None":
+        selected_email = sales.loc[
+            sales["SalespersonName"] == sel_name, "Email"
+        ].iat[0]
 else:
+    st.warning("⚠️ No salespeople data found.")
     selected_branch = "Unknown"
+    sel_name = "None"
 
-# --- Display Estimate ---
+# Load & prep inventory
+df_inv = load_sheet(INVENTORY_TAB)
+if df_inv.empty:
+    st.stop()
+
+df_inv["Brand"] = df_inv["Brand"].astype(str).str.strip()
+df_inv["Color"] = df_inv["Color"].astype(str).str.strip()
+df_inv["Full Name"] = df_inv["Brand"] + " - " + df_inv["Color"]
+df_inv["Available Sq Ft"] = pd.to_numeric(df_inv["Available Sq Ft"], errors="coerce")
+df_inv["Serialized On Hand Cost"] = pd.to_numeric(
+    df_inv["Serialized On Hand Cost"]
+      .astype(str)
+      .str.replace(r"[\$,]", "", regex=True),
+    errors="coerce"
+)
+df_inv = df_inv[df_inv["Available Sq Ft"] > 0]
+df_inv["unit_cost"] = df_inv["Serialized On Hand Cost"] / df_inv["Available Sq Ft"]
+
+# Fabrication plant logic
+def get_fab_plant(branch):
+    if branch in ["Vernon","Victoria","Vancouver"]: return "Abbotsford"
+    return "Saskatoon"
+fab_plant = get_fab_plant(selected_branch)
+
+# Thickness filter
+if "Thickness" in df_inv.columns:
+    df_inv["Thickness"] = df_inv["Thickness"].astype(str).str.strip().str.lower()
+    thicknesses = sorted(df_inv["Thickness"].unique())
+    sel_thk = st.selectbox("Select Thickness", thicknesses)
+    df_inv = df_inv[df_inv["Thickness"] == sel_thk]
+else:
+    sel_thk = "N/A"
+
+# Sq ft needed
+sq_ft = st.number_input(
+    "Enter Square Footage Needed",
+    min_value=1, value=40, step=1
+)
+sq_ft_used = max(sq_ft, MINIMUM_SQ_FT)
+
+# Price calc + slider
+df_inv["price"] = df_inv.apply(lambda r: calculate_cost(r, sq_ft_used)["total_customer_facing_base_cost"], axis=1)
+mi, ma = int(df_inv["price"].min()), int(df_inv["price"].max())
+budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=100)
+df_inv = df_inv[df_inv["price"] <= budget]
+
+# Material selection
+records = df_inv.to_dict("records")
+selected = st.selectbox(
+    "Choose a material",
+    records,
+    format_func=lambda r: f"{r['Full Name']} - ${r['price']:.2f}"
+)
+
 if selected:
     costs = calculate_cost(selected, sq_ft_used)
     st.markdown(f"**Material:** {selected['Full Name']}")
-    st.markdown(f"**Source Location:** {selected.get('Location', 'N/A')}")
-    query = selected['Full Name'].replace(" ", "+")
-    st.markdown(f"[🔎 Google Image Search]({f'https://www.google.com/search?q={query}+countertop'})")
-    st.markdown(f"**Estimate:** ${costs['total_customer']:,.2f}")
+    st.markdown(f"**Source Location:** {selected.get('Location','N/A')}")
+    q = selected["Full Name"].replace(" ", "+")
+    st.markdown(f"[🔎 Google Image Search](https://www.google.com/search?q={q}+countertop)")
 
-    job_name = st.text_input("Job Name (optional)")
-    additional_costs = st.number_input("Additional Costs", value=0.0, min_value=0.0)
-    subtotal = costs["total_customer"] + additional_costs
-    gst = subtotal * GST_RATE
-    total = subtotal + gst
+    job = st.text_input("Job Name (optional)")
+    additional = st.number_input(
+        "Additional Costs - sinks, tile, plumbing",
+        value=0.0, min_value=0.0, step=10.0, format="%.2f"
+    )
+
+    subtotal = costs["total_customer_facing_base_cost"] + additional
+    gst_amt = subtotal * GST_RATE
+    final_total = subtotal + gst_amt
 
     st.markdown(f"**Subtotal:** ${subtotal:,.2f}")
-    st.markdown(f"**GST (5%):** ${gst:,.2f}")
-    st.markdown(f"### Final Total: ${total:,.2f}")
+    st.markdown(f"**GST (5%):** ${gst_amt:,.2f}")
+    st.markdown(f"### Final Total: ${final_total:,.2f}")
 
     if selected_email and st.button("📧 Email Quote"):
-        email_body = compose_email(job_name, selected_branch, selected, costs, sq_ft_used, additional_costs, subtotal, gst, total)
-        subject = f"Quote - {job_name or 'Unnamed Job'}"
-        send_email(subject, email_body, selected_email)
+        body = compose_breakdown_email_body(
+            job,
+            selected_branch,
+            sel_name,
+            selected,
+            costs,
+            fab_plant,
+            sel_thk,
+            sq_ft_used,
+            additional,
+            subtotal,
+            gst_amt,
+            final_total
+        )
+        subj = f"CounterPro Quote - {job or 'Unnamed Job'}"
+        send_email(subj, body, selected_email)

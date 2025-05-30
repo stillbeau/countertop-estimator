@@ -6,9 +6,8 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import pytz
-import requests # REQUIRED for Auth0 OAuth HTTP requests
-import jwt # REQUIRED for decoding JWT (ID Token) from Auth0
-
+import requests 
+import jwt 
 
 # --- Custom CSS ---
 st.markdown("""
@@ -37,7 +36,7 @@ AUTH0_DOMAIN = st.secrets["AUTH0_DOMAIN"]
 AUTH0_CLIENT_ID = st.secrets["AUTH0_CLIENT_ID"]
 AUTH0_CLIENT_SECRET = st.secrets["AUTH0_CLIENT_SECRET"]
 AUTH0_CALLBACK_URL = st.secrets["AUTH0_CALLBACK_URL"]
-AUTH0_LOGOUT_URL = AUTH0_CALLBACK_URL.rsplit('/', 1)[0] # Base URL for logout
+AUTH0_LOGOUT_URL = AUTH0_CALLBACK_URL.rsplit('/', 1)[0] 
 
 
 # --- Login/Logout Functions ---
@@ -47,7 +46,7 @@ def login_button():
                     f"response_type=code&" \
                     f"client_id={AUTH0_CLIENT_ID}&" \
                     f"redirect_uri={AUTH0_CALLBACK_URL}&" \
-                    f"scope=openid%20profile%20email" # openid profile email are standard scopes
+                    f"scope=openid%20profile%20email" 
     
     st.markdown(f"<a href='{authorize_url}' target='_self'><button style='background-color:#0056b3;color:white;padding:10px 20px;border-radius:5px;border:none;cursor:pointer;'>Login with Auth0</button></a>", unsafe_allow_html=True)
 
@@ -58,18 +57,20 @@ def logout_button():
     
     logout_url = f"https://{AUTH0_DOMAIN}/v2/logout?" \
                  f"client_id={AUTH0_CLIENT_ID}&" \
-                 f"returnTo={AUTH0_LOGOUT_URL}" # Redirect back to app base URL after logout
+                 f"returnTo={AUTH0_LOGOUT_URL}" 
     
     st.markdown(f"<a href='{logout_url}' target='_self'><button style='background-color:#d9534f;color:white;padding:10px 20px;border-radius:5px;border:none;cursor:pointer;'>Logout</button></a>", unsafe_allow_html=True)
 
 def handle_auth0_callback():
     """Exchanges the authorization code for tokens and user info."""
-    query_params = st.experimental_get_query_params()
+    # OLD: query_params = st.experimental_get_query_params()
+    query_params = st.query_params # UPDATED: Use st.query_params
     code = query_params.get("code")
 
     if code:
-        code = code[0] # Get the first element if 'code' is a list
-        st.experimental_set_query_params() # Clear the query parameters from URL
+        code = code[0] 
+        # OLD: st.experimental_set_query_params()
+        st.query_params.clear() # UPDATED: Clear query parameters
 
         token_url = f"https://{AUTH0_DOMAIN}/oauth/token"
         headers = {'content-type': 'application/x-www-form-urlencoded'}
@@ -83,14 +84,15 @@ def handle_auth0_callback():
         
         try:
             response = requests.post(token_url, headers=headers, data=payload)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            response.raise_for_status() 
             tokens = response.json()
 
             st.session_state["access_token"] = tokens["access_token"]
-            st.session_state["id_token"] = tokens["id_token"] # Contains user profile (JWT)
+            st.session_state["id_token"] = tokens["id_token"] 
 
             # Decode ID token for basic user info
-            decoded_id_token = jwt.decode(tokens["id_token"], options={"verify_signature": False}, algorithms=["RS256"]) # Added algorithms to suppress warning
+            # Make sure pyjwt is installed (pip install pyjwt)
+            decoded_id_token = jwt.decode(tokens["id_token"], options={"verify_signature": False}, algorithms=["RS256"]) 
             st.session_state["user_email"] = decoded_id_token.get("email")
             st.session_state["user_name"] = decoded_id_token.get("name", decoded_id_token.get("email"))
 
@@ -105,21 +107,20 @@ def handle_auth0_callback():
 def check_authentication():
     if "user_email" not in st.session_state:
         # Handle callback if returning from Auth0
-        if "code" in st.experimental_get_query_params():
+        # OLD: if "code" in st.experimental_get_query_params():
+        if "code" in st.query_params: # UPDATED: Use st.query_params
             handle_auth0_callback()
-            # If handle_auth0_callback reruns, this part won't execute further.
-            # If it doesn't rerun (e.g., error), we show login button.
-            return False
+            return False # Stop execution until rerun
         else:
             st.title("CounterPro Login")
             st.write("Please log in to access the CounterPro Estimator.")
             login_button()
             return False
-    return True # User is authenticated
+    return True 
 
 
 # --- ALL EXISTING APP CODE GOES BELOW THIS LINE AND INSIDE AN 'IF check_authentication():' BLOCK ---
-if check_authentication(): # Main app content only loads if authenticated
+if check_authentication(): 
     # --- Put your logout button at the top of your app content ---
     st.sidebar.markdown(f"Logged in as: **{st.session_state['user_name']}**")
     logout_button()
@@ -344,118 +345,126 @@ if check_authentication(): # Main app content only loads if authenticated
             return False
 
     # --- Streamlit UI Begins Here ---
-    st.title("CounterPro") # UPDATED APP TITLE
-    st.write("Get an accurate estimate for your custom countertop project.")
+    # This is the entry point for the app.
+    # It first checks authentication and then displays the main app content.
+    if check_authentication(): 
+        # --- Put your logout button at the top of your app content ---
+        st.sidebar.markdown(f"Logged in as: **{st.session_state['user_name']}**")
+        logout_button()
+        st.sidebar.markdown("---") # Visual separator
 
-    df_master_inventory = None
-    df_salespeople = pd.DataFrame() 
+        st.title("CounterPro") # UPDATED APP TITLE
+        st.write("Get an accurate estimate for your custom countertop project.")
 
-    with st.spinner(f"Loading all inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'..."):
-        df_master_inventory = load_data_from_google_sheet(MASTER_INVENTORY_SHEET_TAB_NAME) 
-    with st.spinner(f"Loading salespeople data from '{SALESPEOPLE_SHEET_TAB_NAME}'..."):
-        df_salespeople = load_data_from_google_sheet(SALESPEOPLE_SHEET_TAB_NAME)
-
-    if df_master_inventory.empty: 
-        st.error(f"Could not load master inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'. App cannot proceed.")
-        st.stop()
-    if df_salespeople.empty:
-        st.warning(f"⚠️ Could not load salespeople data. Emailing functionality will be limited/unavailable.")
+        df_master_inventory = None
         df_salespeople = pd.DataFrame() 
 
-    sales_branch_locations = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"] 
-    selected_branch = st.selectbox("Select Your Branch Location", sales_branch_locations)
+        with st.spinner(f"Loading all inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'..."):
+            df_master_inventory = load_data_from_google_sheet(MASTER_INVENTORY_SHEET_TAB_NAME) 
+        with st.spinner(f"Loading salespeople data from '{SALESPEOPLE_SHEET_TAB_NAME}'..."):
+            df_salespeople = load_data_from_google_sheet(SALESPEOPLE_SHEET_TAB_NAME)
 
-    selected_salesperson_email = None
-    selected_salesperson_display = "None" 
+        if df_master_inventory.empty: 
+            st.error(f"Could not load master inventory data from '{MASTER_INVENTORY_SHEET_TAB_NAME}'. App cannot proceed.")
+            st.stop()
+        if df_salespeople.empty:
+            st.warning(f"⚠️ Could not load salespeople data. Emailing functionality will be limited/unavailable.")
+            df_salespeople = pd.DataFrame() 
 
-    if not df_salespeople.empty:
-        salespeople_in_branch_df = df_salespeople[df_salespeople["Branch"].astype(str).str.lower() == selected_branch.lower()]
-        if not salespeople_in_branch_df.empty:
-            salesperson_options = salespeople_in_branch_df['SalespersonName'].tolist()
-            selected_salesperson_display = st.selectbox(f"Select Salesperson in {selected_branch} (for Email)", options=["None"] + salesperson_options)
-            if selected_salesperson_display != "None":
-                selected_salesperson_row = salespeople_in_branch_df[salespeople_in_branch_df['SalespersonName'] == selected_salesperson_display]
-                if not selected_salesperson_row.empty:
-                    selected_salesperson_email = selected_salesperson_row['Email'].iloc[0] 
-                else:
-                    selected_salesperson_email = None 
-        else: st.caption(f"No salespeople listed for {selected_branch} branch.")
-    else: st.caption("Salespeople data not loaded or empty.")
+        sales_branch_locations = ["Vernon", "Victoria", "Vancouver", "Calgary", "Edmonton", "Saskatoon", "Winnipeg"] 
+        selected_branch = st.selectbox("Select Your Branch Location", sales_branch_locations)
 
-    branch_to_material_sources = {
-        "Vernon": ["Vernon", "Abbotsford"], "Victoria": ["Vernon", "Abbotsford"], 
-        "Vancouver": ["Vernon", "Abbotsford"], "Calgary": ["Edmonton", "Saskatoon"],  
-        "Edmonton": ["Edmonton", "Saskatoon"], "Saskatoon": ["Edmonton", "Saskatoon"], "Winnipeg": ["Edmonton", "Saskatoon"], 
-    }
-    allowed_locations_for_branch = branch_to_material_sources.get(selected_branch, [])
-    df_inventory = pd.DataFrame() 
-    if "Location" in df_master_inventory.columns:
-        if allowed_locations_for_branch:
-            df_inventory = df_master_inventory[df_master_inventory["Location"].isin(allowed_locations_for_branch)]
+        selected_salesperson_email = None
+        selected_salesperson_display = "None" 
+
+        if not df_salespeople.empty:
+            salespeople_in_branch_df = df_salespeople[df_salespeople["Branch"].astype(str).str.lower() == selected_branch.lower()]
+            if not salespeople_in_branch_df.empty:
+                salesperson_options = salespeople_in_branch_df['SalespersonName'].tolist()
+                selected_salesperson_display = st.selectbox(f"Select Salesperson in {selected_branch} (for Email)", options=["None"] + salesperson_options)
+                if selected_salesperson_display != "None":
+                    selected_salesperson_row = salespeople_in_branch_df[salespeople_in_branch_df['SalespersonName'] == selected_salesperson_display]
+                    if not selected_salesperson_row.empty:
+                        selected_salesperson_email = selected_salesperson_row['Email'].iloc[0] 
+                    else:
+                        selected_salesperson_email = None 
+            else: st.caption(f"No salespeople listed for {selected_branch} branch.")
+        else: st.caption("Salespeople data not loaded or empty.")
+
+        branch_to_material_sources = {
+            "Vernon": ["Vernon", "Abbotsford"], "Victoria": ["Vernon", "Abbotsford"], 
+            "Vancouver": ["Vernon", "Abbotsford"], "Calgary": ["Edmonton", "Saskatoon"],  
+            "Edmonton": ["Edmonton", "Saskatoon"], "Saskatoon": ["Edmonton", "Saskatoon"], "Winnipeg": ["Edmonton", "Saskatoon"], 
+        }
+        allowed_locations_for_branch = branch_to_material_sources.get(selected_branch, [])
+        df_inventory = pd.DataFrame() 
+        if "Location" in df_master_inventory.columns:
+            if allowed_locations_for_branch:
+                df_inventory = df_master_inventory[df_master_inventory["Location"].isin(allowed_locations_for_branch)]
+            else:
+                st.warning(f"No material sources defined for branch '{selected_branch}'. Showing all inventory.")
+                df_inventory = df_master_inventory.copy()
         else:
-            st.warning(f"No material sources defined for branch '{selected_branch}'. Showing all inventory.")
-            df_inventory = df_master_inventory.copy()
-    else:
-        st.error("Master inventory is missing 'Location' column. Cannot filter by branch.")
-        st.stop() 
+            st.error("Master inventory is missing 'Location' column. Cannot filter by branch.")
+            st.stop() 
 
-    if df_inventory.empty: 
-        st.warning(f"No inventory for branch '{selected_branch}' after location filter.")
-        st.stop()
+        if df_inventory.empty: 
+            st.warning(f"No inventory for branch '{selected_branch}' after location filter.")
+            st.stop()
 
-    def get_fabrication_plant(branch): 
-        if branch in ["Vernon", "Victoria", "Vancouver"]: return "Abbotsford"
-        if branch in ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]: return "Saskatoon"
-        return "Unknown"
-    fabrication_plant = get_fabrication_plant(selected_branch)
-    st.markdown(f"**Orders for {selected_branch} will be fabricated at:** {fabrication_plant}")
+        def get_fabrication_plant(branch): 
+            if branch in ["Vernon", "Victoria", "Vancouver"]: return "Abbotsford"
+            if branch in ["Calgary", "Edmonton", "Saskatoon", "Winnipeg"]: return "Saskatoon"
+            return "Unknown"
+        fabrication_plant = get_fabrication_plant(selected_branch)
+        st.markdown(f"**Orders for {selected_branch} will be fabricated at:** {fabrication_plant}")
 
-    if "Thickness" not in df_inventory.columns: 
-        st.error("Data Error: 'Thickness' column missing. Cannot proceed."); st.stop()
-    df_inventory["Thickness"] = df_inventory["Thickness"].astype(str).str.strip().str.lower()
-    thickness_options = sorted(list(df_inventory["Thickness"].unique())) 
-    if not thickness_options: st.warning("No thickness options available."); st.stop()
-    default_thickness_index = thickness_options.index("3cm") if "3cm" in thickness_options else 0
-    selected_thickness = st.selectbox("Select Thickness", options=thickness_options, index=default_thickness_index)
-    df_inventory = df_inventory[df_inventory["Thickness"] == selected_thickness.lower()]
-    if df_inventory.empty: st.warning(f"No slabs match thickness '{selected_thickness}'."); st.stop()
+        if "Thickness" not in df_inventory.columns: 
+            st.error("Data Error: 'Thickness' column missing. Cannot proceed."); st.stop()
+        df_inventory["Thickness"] = df_inventory["Thickness"].astype(str).str.strip().str.lower()
+        thickness_options = sorted(list(df_inventory["Thickness"].unique())) 
+        if not thickness_options: st.warning("No thickness options available."); st.stop()
+        default_thickness_index = thickness_options.index("3cm") if "3cm" in thickness_options else 0
+        selected_thickness = st.selectbox("Select Thickness", options=thickness_options, index=default_thickness_index)
+        df_inventory = df_inventory[df_inventory["Thickness"] == selected_thickness.lower()]
+        if df_inventory.empty: st.warning(f"No slabs match thickness '{selected_thickness}'."); st.stop()
 
-    if not ("Brand" in df_inventory.columns and "Color" in df_inventory.columns):
-        st.error("Data Error: 'Brand' or 'Color' columns missing."); st.stop()
-    df_inventory["Full Name"] = df_inventory["Brand"].astype(str) + " - " + df_inventory["Color"].astype(str)
+        if not ("Brand" in df_inventory.columns and "Color" in df_inventory.columns):
+            st.error("Data Error: 'Brand' or 'Color' columns missing."); st.stop()
+        df_inventory["Full Name"] = df_inventory["Brand"].astype(str) + " - " + df_inventory["Color"].astype(str)
 
-    if not ("Serialized On Hand Cost" in df_inventory.columns and "Available Sq Ft" in df_inventory.columns):
-        st.error("Data Error: Costing columns missing."); st.stop()
-    df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna() & (df_inventory['Available Sq Ft'] > 0)] 
-    if df_inventory.empty: st.error("No inventory with valid 'Available Sq Ft'."); st.stop()
-    df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
+        if not ("Serialized On Hand Cost" in df_inventory.columns and "Available Sq Ft" in df_inventory.columns):
+            st.error("Data Error: Costing columns missing."); st.stop()
+        df_inventory = df_inventory[df_inventory['Available Sq Ft'].notna() & (df_inventory['Available Sq Ft'] > 0)] 
+        if df_inventory.empty: st.error("No inventory with valid 'Available Sq Ft'."); st.stop()
+        df_inventory["unit_cost"] = df_inventory["Serialized On Hand Cost"] / df_inventory["Available Sq Ft"]
 
-    sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
-    sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
-    if sq_ft_input < MINIMUM_SQ_FT: st.info(f"Minimum is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} for pricing.")
+        sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
+        sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
+        if sq_ft_input < MINIMUM_SQ_FT: st.info(f"Minimum is {MINIMUM_SQ_FT} sq ft. Using {MINIMUM_SQ_FT} for pricing.")
 
-    df_agg = (df_inventory.groupby(["Full Name", "Location"]) 
-              .agg(available_sq_ft=("Available Sq Ft", "sum"), unit_cost=("unit_cost", "mean"), 
-                   slab_count=("Serial Number", "nunique"), 
-                   serial_numbers=("Serial Number", lambda x: ", ".join(sorted(list(x.astype(str).unique()))))) 
-              .reset_index())
-    required_material = sq_ft_used * 1.1
-    df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
-    if df_agg.empty: st.error("No colors have enough material (inc. buffer)."); st.stop()
+        df_agg = (df_inventory.groupby(["Full Name", "Location"]) 
+                  .agg(available_sq_ft=("Available Sq Ft", "sum"), unit_cost=("unit_cost", "mean"), 
+                       slab_count=("Serial Number", "nunique"), 
+                       serial_numbers=("Serial Number", lambda x: ", ".join(sorted(list(x.astype(str).unique()))))) 
+                  .reset_index())
+        required_material = sq_ft_used * 1.1
+        df_agg = df_agg[df_agg["available_sq_ft"] >= required_material]
+        if df_agg.empty: st.error("No colors have enough material (inc. buffer)."); st.stop()
 
-    df_agg["price_for_initial_filter"] = df_agg.apply(lambda r: calculate_aggregated_costs(r,sq_ft_used)["total_customer_facing_base_cost"],axis=1) 
-    df_valid = df_agg[df_agg["price_for_initial_filter"] > 0] 
-    if df_valid.empty: st.error("No valid slab prices after calculations."); st.stop()
+        df_agg["price_for_initial_filter"] = df_agg.apply(lambda r: calculate_aggregated_costs(r,sq_ft_used)["total_customer_facing_base_cost"],axis=1) 
+        df_valid = df_agg[df_agg["price_for_initial_filter"] > 0] 
+        if df_valid.empty: st.error("No valid slab prices after calculations."); st.stop()
 
-    min_c, max_c = (int(df_valid["price_for_initial_filter"].min()), int(df_valid["price_for_initial_filter"].max())) if not df_valid.empty else (0,10000)
-    if min_c >= max_c: max_c = min_c + 100
-    max_job_cost = st.slider("Max Job Cost ($) (Base Price)", min_value=min_c, max_value=max_c, value=max_c, step=100)
-    df_agg_filtered = df_valid[df_valid["price_for_initial_filter"] <= max_job_cost] 
-    if df_agg_filtered.empty: st.error("No colors in selected cost range."); st.stop()
+        min_c, max_c = (int(df_valid["price_for_initial_filter"].min()), int(df_valid["price_for_initial_filter"].max())) if not df_valid.empty else (0,10000)
+        if min_c >= max_c: max_c = min_c + 100
+        max_job_cost = st.slider("Max Job Cost ($) (Base Price)", min_value=min_c, max_value=max_c, value=max_c, step=100)
+        df_agg_filtered = df_valid[df_valid["price_for_initial_filter"] <= max_job_cost] 
+        if df_agg_filtered.empty: st.error("No colors in selected cost range."); st.stop()
 
-    records = df_agg_filtered.to_dict("records")
-    if not records: st.error("No material records to select."); st.stop()
-    selected_record = st.selectbox("Select Material/Color", records, format_func=lambda r: f"{r.get('Full Name','N/A')} ({r.get('Location','N/A')}) - (${r.get('price_for_initial_filter',0)/sq_ft_used:.2f}/sq ft)")
+        records = df_agg_filtered.to_dict("records")
+        if not records: st.error("No material records to select."); st.stop()
+        selected_record = st.selectbox("Select Material/Color", records, format_func=lambda r: f"{r.get('Full Name','N/A')} ({r.get('Location','N/A')}) - (${r.get('price_for_initial_filter',0)/sq_ft_used:.2f}/sq ft)")
 
     if selected_record: 
         st.markdown(f"**Material:** {selected_record.get('Full Name', 'N/A')}")
@@ -516,4 +525,3 @@ if check_authentication(): # Main app content only loads if authenticated
 
     st.markdown("---")
     st.caption(f"CounterPro. Branch: '{selected_branch}'. Data sourced from '{MASTER_INVENTORY_SHEET_TAB_NAME}'. Time: {pd.Timestamp.now(tz='America/Vancouver').strftime('%Y-%m-%d %H:%M:%S %Z')}")
-

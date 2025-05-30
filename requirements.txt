@@ -2,6 +2,4 @@ streamlit>=1.30.0
 pandas>=2.0.0
 gspread>=5.12.0
 oauth2client>=4.1.3
-smtplib3  # optional: remove if using built-in smtplib only
-email-validator  # optional: helps validate email formats
 pytz>=2023.3

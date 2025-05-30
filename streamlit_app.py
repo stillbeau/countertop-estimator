@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import gspread
-import json
 import smtplib
 import pytz
 from email.mime.text import MIMEText
@@ -38,7 +37,7 @@ SALESPEOPLE_TAB = "Salespeople"
 @st.cache_data(show_spinner=False)
 def load_sheet(tab):
     try:
-        creds = json.loads(st.secrets["gcp_service_account"])
+        creds = st.secrets["gcp_service_account"]  # ✅ Already parsed as dict
         gc = gspread.service_account_from_dict(creds)
         sh = gc.open_by_key(SPREADSHEET_ID)
         ws = sh.worksheet(tab)

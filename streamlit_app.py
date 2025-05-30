@@ -122,5 +122,28 @@ if selected:
     costs = calculate_cost(selected, sq_ft_used)
     st.markdown(f"**Material:** {selected['Full Name']}")
     st.markdown(f"**Source Location:** {selected.get('Location', 'N/A')}")
-    
-# ... (code truncated for brevity in preview)
+    search_query = selected['Full Name'].replace(" ", "+")
+    st.markdown(f"[ð Google Image Search for {selected['Full Name']}](https://www.google.com/search?q={search_query}+countertop)")
+    st.markdown(f"**Total Estimate:** ${costs['total_customer']:,.2f}")
+
+    job_name = st.text_input("Job Name (optional)")
+    additional_costs = st.number_input("Additional Costs (e.g. plumbing, tile)", value=0.0, min_value=0.0)
+    subtotal = costs["total_customer"] + additional_costs
+    gst = subtotal * GST_RATE
+    total = subtotal + gst
+
+    st.markdown(f"**Subtotal:** ${subtotal:,.2f}")
+    st.markdown(f"**GST:** ${gst:,.2f}")
+    st.markdown(f"### Final Total: ${total:,.2f}")
+
+    if selected_email and st.button("Email Quote"):
+        body = f"""
+        <h3>Quote for {job_name or 'Unnamed Job'}</h3>
+        <p><strong>Material:</strong> {selected['Full Name']}<br>
+        <strong>Square Feet:</strong> {sq_ft_used} sq.ft<br>
+        <strong>Subtotal:</strong> ${subtotal:,.2f}<br>
+        <strong>GST:</strong> ${gst:,.2f}<br>
+        <strong>Total:</strong> ${total:,.2f}</p>
+        """
+        subject = f"Quote - {job_name or 'Unnamed Job'}"
+        send_email(subject, body, selected_email)

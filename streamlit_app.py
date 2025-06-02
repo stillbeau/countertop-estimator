@@ -32,25 +32,21 @@ ADDITIONAL_IB_RATE        = 0
 GST_RATE                  = 0.05
 
 # ————————————————————————————————————————————————————————————
-# 1) Point THIS URL at your published-to-CSV PIO spreadsheet:
+# Use your published‐to‐CSV PIO sheet URL here:
 INVENTORY_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vRzPf_DEc7ojcjqCsk_5O9HtSFWy7aj2Fi_bPjUh6HVaN38coQSINDps0RGrpiM9ox58izhsNkzD51j/"
     "pub?output=csv"
 )
 
-# 2) We still pull "Salespeople" from a Google Sheets file via gspread:
+# We still load “Salespeople” from Google Sheets via gspread:
 SPREADSHEET_ID   = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 SALESPEOPLE_TAB  = "Salespeople"
 # ————————————————————————————————————————————————————————————
 
-# --- Load “salespeople” via gspread ---
+# --- Load Salespeople sheet via gspread ---
 @st.cache_data(show_spinner=False)
 def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
-    """
-    Uses a service account (in st.secrets["gcp_service_account"]) to open SPREADSHEET_ID
-    and return the worksheet named tab_name as a DataFrame.
-    """
     try:
         raw = st.secrets["gcp_service_account"]
         creds = json.loads(raw) if isinstance(raw, str) else raw
@@ -64,16 +60,8 @@ def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# --- Cost-calculation helper ---
+# --- Cost‐calculation helper ---
 def calculate_cost(rec: dict, sq: float) -> dict:
-    """
-    rec['unit_cost'] is assumed to be per-sq.ft.
-    Returns a dictionary with:
-      - base_material_and_fab_component
-      - base_install_cost_component
-      - ib_cost_component
-      - total_customer_facing_base_cost
-    """
     uc  = rec.get("unit_cost", 0) or 0
     mat = uc * MARKUP_FACTOR * sq
     fab = FABRICATION_COST_PER_SQFT * sq
@@ -87,7 +75,7 @@ def calculate_cost(rec: dict, sq: float) -> dict:
     }
 
 
-# --- HTML Email Body helper ---
+# --- Compose HTML email body ---
 def compose_breakdown_email_body(
     job_name: str,
     selected_branch: str,
@@ -199,7 +187,7 @@ def send_email(subject: str, body: str, to_email: str):
 
 
 def get_fab_plant(branch: str) -> str:
-    """If branch is one of (Vernon, Victoria, Vancouver), return 'Abbotsford'; otherwise 'Saskatoon'."""
+    """If branch is one of (Vernon, Victoria, Vancouver), return 'Abbotsford'; else 'Saskatoon'."""
     return "Abbotsford" if branch in ["Vernon", "Victoria", "Vancouver"] else "Saskatoon"
 
 
@@ -232,7 +220,7 @@ else:
     selected_salesperson = ""
 
 
-# ── 2) Load Inventory directly from public CSV ──────────────────────────────────
+# ── 2) Load Inventory from PIO CSV ──────────────────────────────────────────────
 try:
     df_inv = pd.read_csv(INVENTORY_CSV_URL)
     df_inv.columns = df_inv.columns.str.strip()
@@ -245,7 +233,25 @@ if df_inv.empty:
     st.stop()
 
 
-# ── 3) Normalize “Available Qty” → “Available Sq Ft” ────────────────────────────
+# ── 3) FILTER BY BRANCH→SOURCE LOCATIONS ────────────────────────────────────────
+branch_to_material_sources = {
+    "Vernon":    ["Vernon", "Abbotsford"],
+    "Victoria":  ["Vernon", "Abbotsford"],
+    "Vancouver": ["Vernon", "Abbotsford"],
+    "Calgary":   ["Edmonton", "Saskatoon"],
+    "Edmonton":  ["Edmonton", "Saskatoon"],
+    "Saskatoon": ["Edmonton", "Saskatoon"],
+    "Winnipeg":  ["Edmonton", "Saskatoon"],
+}
+
+allowed_sources = branch_to_material_sources.get(selected_branch, [])
+if allowed_sources:
+    df_inv = df_inv[df_inv["Location"].isin(allowed_sources)]
+else:
+    st.warning(f"No material‐source mapping for branch '{selected_branch}'. Showing all inventory.")
+
+
+# ── 4) Normalize “Available Qty” → “Available Sq Ft” ────────────────────────────
 if "Available Qty" in df_inv.columns:
     df_inv["Available Sq Ft"] = pd.to_numeric(df_inv["Available Qty"], errors="coerce")
 elif "Available Sq Ft" in df_inv.columns:
@@ -258,7 +264,7 @@ else:
     st.stop()
 
 
-# ── 4) Normalize “Serialized Unit Cost” → per-sq.ft `unit_cost` ─────────────────
+# ── 5) Normalize “Serialized Unit Cost” → per-sq.ft `unit_cost` ─────────────────
 if "Serialized Unit Cost" in df_inv.columns:
     df_inv["unit_cost"] = pd.to_numeric(
         df_inv["Serialized Unit Cost"]
@@ -267,7 +273,6 @@ if "Serialized Unit Cost" in df_inv.columns:
         errors="coerce"
     )
 elif "Serialized On Hand Cost" in df_inv.columns:
-    # Interpret “Serialized On Hand Cost” as *total* cost, so divide by sqft
     df_inv["SerialOnHandCost"] = pd.to_numeric(
         df_inv["Serialized On Hand Cost"]
             .astype(str)
@@ -282,20 +287,19 @@ else:
     )
     st.stop()
 
-# Drop any rows where availability or unit_cost is invalid
 df_inv = df_inv[
     df_inv["Available Sq Ft"].notna() & (df_inv["Available Sq Ft"] > 0) &
     df_inv["unit_cost"].notna() & (df_inv["unit_cost"] > 0)
 ]
 
 
-# ── 5) Build “Full Name” column ─────────────────────────────────────────────────
+# ── 6) Build “Full Name” column ─────────────────────────────────────────────────
 df_inv["Brand"] = df_inv["Brand"].astype(str).str.strip()
 df_inv["Color"] = df_inv["Color"].astype(str).str.strip()
 df_inv["Full Name"] = df_inv["Brand"] + " - " + df_inv["Color"]
 
 
-# ── 6) Thickness selector ──────────────────────────────────────────────────────
+# ── 7) Thickness selector ──────────────────────────────────────────────────────
 df_inv["Thickness"] = df_inv["Thickness"].astype(str).str.strip().str.lower()
 th_list = sorted(df_inv["Thickness"].unique())
 selected_thickness = st.selectbox(
@@ -306,12 +310,12 @@ selected_thickness = st.selectbox(
 df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
 
 
-# ── 7) Square footage input ────────────────────────────────────────────────────
+# ── 8) Square footage input ────────────────────────────────────────────────────
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
 sq_ft_used  = max(sq_ft_input, MINIMUM_SQ_FT)
 
 
-# ── 8) Group, filter, and price ────────────────────────────────────────────────
+# ── 9) Group, filter, and price ────────────────────────────────────────────────
 df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
     available_sq_ft = ("Available Sq Ft", "sum"),
     unit_cost       = ("unit_cost", "mean"),
@@ -319,11 +323,8 @@ df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
     serial_numbers  = ("Serial Number", lambda x: ", ".join(sorted(x.astype(str).unique())))
 ).reset_index()
 
-# Only keep rows that have ≥ (1.1 × requested SqFt) on hand
 required = sq_ft_used * 1.1
 df_agg = df_agg[df_agg["available_sq_ft"] >= required]
-
-# Compute total‐customer price for each row
 df_agg["price"] = df_agg.apply(
     lambda r: calculate_cost(r, sq_ft_used)["total_customer_facing_base_cost"],
     axis=1
@@ -334,7 +335,7 @@ if df_agg.empty:
     st.stop()
 
 
-# ── 9) Defensive slider for “Max Job Cost” ──────────────────────────────────────
+# ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
 mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
 span = ma - mi
 step = 100 if span >= 100 else (span if span > 0 else 1)
@@ -346,7 +347,7 @@ if df_agg.empty:
     st.stop()
 
 
-# ── 10) “Choose a material” dropdown ────────────────────────────────────────────
+# ── 11) “Choose a material” dropdown ────────────────────────────────────────────
 records = df_agg.to_dict("records")
 selected = st.selectbox(
     "Choose a material",
@@ -357,17 +358,13 @@ selected = st.selectbox(
 if selected:
     costs = calculate_cost(selected, sq_ft_used)
 
-    # Show chosen material details
     st.markdown(f"**Material:** {selected['Full Name']}")
     st.markdown(f"**Source Location:** {selected['Location']}")
-
-    # Google Image Search link
     q = selected["Full Name"].replace(" ", "+")
     st.markdown(f"[🔎 Google Image Search](https://www.google.com/search?q={q}+countertop)")
 
     st.markdown("---")
 
-    # Job name + additional costs
     job_name         = st.text_input("Job Name (optional)")
     additional_costs = st.number_input(
         "Additional Costs – sinks, tile, plumbing",
@@ -378,7 +375,6 @@ if selected:
     gst_amount = subtotal * GST_RATE
     final_total = subtotal + gst_amount
 
-    # Display Subtotal / GST / Final Total in green
     st.markdown(
         f"**Subtotal:** <span style='color:green'>${subtotal:,.2f}</span>", 
         unsafe_allow_html=True
@@ -392,11 +388,9 @@ if selected:
         unsafe_allow_html=True
     )
 
-    # If multiple slabs, show a note
     if selected["slab_count"] > 1:
         st.info("Note: This selection uses multiple slabs; color/pattern may vary slightly.")
 
-    # ── 11) “Email Quote” button ─────────────────────────────────────────────────
     if selected_email and st.button("📧 Email Quote"):
         body = compose_breakdown_email_body(
             job_name,

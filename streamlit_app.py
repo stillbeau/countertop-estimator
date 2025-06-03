@@ -90,7 +90,7 @@ def compose_breakdown_email_body(
     gst_amount: float,
     final_total: float
 ) -> str:
-    def fmt(v): 
+    def fmt(v):
         return f"${v:,.2f}"
     tz  = pytz.timezone("America/Vancouver")
     now = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -337,12 +337,15 @@ if df_agg.empty:
     st.error("❌ No materials fall within that budget.")
     st.stop()
 
-# ── 11) “Choose a material” dropdown (updated formatting) ───────────────────────
+# ── 11) “Choose a material” dropdown (showing final $/sq ft) ────────────────────
 records = df_agg.to_dict("records")
 selected = st.selectbox(
     "Choose a material",
     records,
-    format_func=lambda r: f"{r['Full Name']} – ${r['unit_cost']:.2f}"
+    format_func=lambda r: (
+        f"{r['Full Name']} – "
+        f"${calculate_cost(r, sq_ft_used)['total_customer_facing_base_cost'] / sq_ft_used:,.2f}/sq ft"
+    )
 )
 
 if selected:

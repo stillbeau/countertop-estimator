@@ -219,7 +219,6 @@ else:
     selected_branch = ""
     selected_salesperson = ""
 
-
 # ── 2) Load Inventory from PIO CSV ──────────────────────────────────────────────
 try:
     df_inv = pd.read_csv(INVENTORY_CSV_URL)
@@ -231,7 +230,6 @@ except Exception as e:
 if df_inv.empty:
     st.error("❌ Loaded inventory CSV is empty.")
     st.stop()
-
 
 # ── 3) FILTER BY BRANCH→SOURCE LOCATIONS ────────────────────────────────────────
 branch_to_material_sources = {
@@ -250,7 +248,6 @@ if allowed_sources:
 else:
     st.warning(f"No material‐source mapping for branch '{selected_branch}'. Showing all inventory.")
 
-
 # ── 4) Normalize “Available Qty” → “Available Sq Ft” ────────────────────────────
 if "Available Qty" in df_inv.columns:
     df_inv["Available Sq Ft"] = pd.to_numeric(df_inv["Available Qty"], errors="coerce")
@@ -262,7 +259,6 @@ else:
         f"Columns found: {df_inv.columns.tolist()}"
     )
     st.stop()
-
 
 # ── 5) Normalize “Serialized Unit Cost” → per-sq.ft `unit_cost` ─────────────────
 if "Serialized Unit Cost" in df_inv.columns:
@@ -292,12 +288,10 @@ df_inv = df_inv[
     df_inv["unit_cost"].notna() & (df_inv["unit_cost"] > 0)
 ]
 
-
 # ── 6) Build “Full Name” column ─────────────────────────────────────────────────
 df_inv["Brand"] = df_inv["Brand"].astype(str).str.strip()
 df_inv["Color"] = df_inv["Color"].astype(str).str.strip()
 df_inv["Full Name"] = df_inv["Brand"] + " - " + df_inv["Color"]
-
 
 # ── 7) Thickness selector ──────────────────────────────────────────────────────
 df_inv["Thickness"] = df_inv["Thickness"].astype(str).str.strip().str.lower()
@@ -309,11 +303,9 @@ selected_thickness = st.selectbox(
 )
 df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
 
-
 # ── 8) Square footage input ────────────────────────────────────────────────────
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
 sq_ft_used  = max(sq_ft_input, MINIMUM_SQ_FT)
-
 
 # ── 9) Group, filter, and price ────────────────────────────────────────────────
 df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
@@ -334,7 +326,6 @@ if df_agg.empty:
     st.error("❌ No slabs have enough material (including 10% buffer).")
     st.stop()
 
-
 # ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
 mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
 span = ma - mi
@@ -346,13 +337,12 @@ if df_agg.empty:
     st.error("❌ No materials fall within that budget.")
     st.stop()
 
-
-# ── 11) “Choose a material” dropdown ────────────────────────────────────────────
+# ── 11) “Choose a material” dropdown (updated formatting) ───────────────────────
 records = df_agg.to_dict("records")
 selected = st.selectbox(
     "Choose a material",
     records,
-    format_func=lambda r: f"{r['Full Name']} ({r['Location']}) – (${r['price']/sq_ft_used:.2f}/sq ft)"
+    format_func=lambda r: f"{r['Full Name']} – ${r['unit_cost']:.2f}"
 )
 
 if selected:

@@ -1,633 +1,403 @@
 import streamlit as st
 import pandas as pd
 import gspread
-from google.oauth2.service_account import Credentials
-import re
-from io import StringIO
-import json # For parsing JSON from secrets or uploaded file
-import math # For pagination
+import json
+import smtplib
+import pytz
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-# --- Page Configuration ---
-st.set_page_config(layout="wide", page_title="Job Issue Detector", page_icon="⚙️")
-
-# --- App Title ---
-st.title("⚙️ Job Issue Detector Dashboard")
-st.markdown("Analyzes job data from Google Sheets to identify issues and create a prioritized 'todo' list.")
-
-# --- Constants & Configuration ---
-SPREADSHEET_ID = "1iToy3C-Bfn06bjuEM_flHNHwr2k1zMCV1wX9MNKzj38" # YOUR GOOGLE SHEET ID
-DATA_WORKSHEET_NAME = "jobs" # Your main data sheet
-TODO_WORKSHEET_NAME = "todo" # Sheet for the priority list
-ITEMS_PER_PAGE = 10 # For pagination
-
-# --- Helper Functions (Authentication, Data Loading, Processing) ---
-
-def get_google_creds():
+# --- Page config & CSS ---
+st.set_page_config(page_title="CounterPro", layout="centered")
+st.markdown(
     """
-    Tries to load Google credentials from Streamlit secrets.
-    If not found (e.g., local development), it will expect a file upload.
-    Returns the credentials dictionary or None.
-    """
-    if "google_creds_json" in st.secrets:
-        try:
-            creds_str = st.secrets["google_creds_json"]
-            creds_dict = json.loads(creds_str)
-            return creds_dict
-        except json.JSONDecodeError:
-            st.sidebar.error("Error parsing Google credentials from Streamlit Secrets. Ensure it's valid JSON.")
-            return None
-        except Exception as e:
-            st.sidebar.error(f"Error with Streamlit Secrets: {e}")
-            return None
-    return None 
+    <style>
+    /* Smaller font for selectboxes/labels */
+    div[data-baseweb="select"] { font-size: 0.8rem; }
+    .stLabel, label { font-size: 0.8rem; }
+    /* Slightly larger headings */
+    h1 { font-size: 2rem; }
+    h2 { font-size: 1.5rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-@st.cache_data(ttl=300) # Cache data for 5 minutes
-def load_google_sheet(creds_dict, spreadsheet_id, worksheet_name):
-    if creds_dict is None:
-        st.error("Google credentials not provided or invalid.")
-        return None, None, None 
+# --- Constants ---
+MINIMUM_SQ_FT             = 35
+MARKUP_FACTOR             = 1.25
+INSTALL_COST_PER_SQFT     = 27
+FABRICATION_COST_PER_SQFT = 17
+ADDITIONAL_IB_RATE        = 0
+GST_RATE                  = 0.05
+
+# ————————————————————————————————————————————————————————————
+# Use your published‐to‐CSV PIO sheet URL here:
+INVENTORY_CSV_URL = (
+    "https://docs.google.com/spreadsheets/d/e/"
+    "2PACX-1vRzPf_DEc7ojcjqCsk_5O9HtSFWy7aj2Fi_bPjUh6HVaN38coQSINDps0RGrpiM9ox58izhsNkzD51j/"
+    "pub?output=csv"
+)
+
+# We still load “Salespeople” from Google Sheets via gspread:
+SPREADSHEET_ID   = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
+SALESPEOPLE_TAB  = "Salespeople"
+# ————————————————————————————————————————————————————————————
+
+# --- Load Salespeople sheet via gspread ---
+@st.cache_data(show_spinner=False)
+def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
     try:
-        creds = Credentials.from_service_account_info(creds_dict, scopes=['https://www.googleapis.com/auth/spreadsheets'])
-        gc = gspread.authorize(creds)
-        spreadsheet = gc.open_by_key(spreadsheet_id)
-        worksheet = spreadsheet.worksheet(worksheet_name)
-        data = worksheet.get_all_records() 
-        if not data:
-            st.info(f"Worksheet '{worksheet_name}' appears to be empty or has no data rows after headers.")
-            return pd.DataFrame(), spreadsheet, gc 
-        df = pd.DataFrame(data)
-        return df, spreadsheet, gc 
-    except gspread.exceptions.WorksheetNotFound:
-        st.error(f"Error: Worksheet '{worksheet_name}' not found in the Google Sheet.")
-        return None, None, None
+        raw = st.secrets["gcp_service_account"]
+        creds = json.loads(raw) if isinstance(raw, str) else raw
+        gc = gspread.service_account_from_dict(creds)
+        ws = gc.open_by_key(SPREADSHEET_ID).worksheet(tab_name)
+        df = pd.DataFrame(ws.get_all_records())
+        df.columns = df.columns.str.strip()
+        return df
     except Exception as e:
-        st.error(f"Error loading Google Sheet '{worksheet_name}': {e}")
-        return None, None, None
-
-def preprocess_data(df):
-    if df is None or df.empty:
+        st.error(f"❌ Could not load Google Sheet tab '{tab_name}': {e}")
         return pd.DataFrame()
-    df_processed = df.copy()
-    # Updated list of date columns based on user's new sheet structure
-    date_columns_to_convert = [
-        'Next Sched. - Date', 'Job Creation', 'Template - Date', 'Photo Layout - Date',
-        'Ready to Fab - Date', 'Rework - Date', 'Cutlist - Date', 'Program - Date',
-        'Material Pull - Date', 'Saw - Date', 'CNC - Date', 
-        'Polish/Fab Completion - Date', 'Hone Splash - Date', 'QC - Date',
-        'Ship - Date', 'Product Rcvd - Date', 'Repair - Date', # First instance of Repair - Date
-        'Delivery - Date', # First instance
-        'Install - Date', # First instance
-        'Pick Up - Date', # First instance
-        'Service - Date', # First instance
-        'Callback - Date', # First instance
-        'Invoice - Date', # First instance
-        'Build Up - Date', 'Tearout - Date', 'Lift Help - Date', 'Courier - Date',
-        'Tile Order - Date', 'Tile Install - Date',
-        'Collect Final - Date', 'Follow Up Call - Date'
-    ]
-    # Remove duplicates just in case they were listed multiple times by user, keep first occurrence
-    unique_date_columns = []
-    for col in date_columns_to_convert:
-        if col not in unique_date_columns:
-            unique_date_columns.append(col)
-    date_columns_to_convert = unique_date_columns
-
-    common_non_date_placeholders = ['', 'None', 'none', 'NAN', 'NaN', 'nan', 'NA', 'NaT', 'nat', 'Pending', 'TBD', 'No Date', '#N/A', 'NULL', 'null']
-
-    for col_name in date_columns_to_convert:
-        if col_name in df_processed.columns:
-            df_processed[col_name] = df_processed[col_name].astype(str).str.strip()
-            for placeholder in common_non_date_placeholders:
-                df_processed[col_name] = df_processed[col_name].replace(placeholder, None, regex=False) 
-            df_processed[col_name] = pd.to_datetime(df_processed[col_name], errors='coerce')
-    return df_processed
-
-def flag_threshold_delays(df, current_date_str):
-    if df is None or df.empty: return pd.DataFrame()
-    df_flagged = df.copy()
-    current_date = pd.Timestamp(current_date_str)
-
-    df_flagged['Flag_Awaiting_RTF'] = False
-    if 'Template - Date' in df_flagged.columns and 'Ready to Fab - Date' in df_flagged.columns:
-        condition_rtf_pending = df_flagged['Template - Date'].notna() & \
-                                df_flagged['Ready to Fab - Date'].isna() & \
-                                pd.api.types.is_datetime64_any_dtype(df_flagged['Template - Date'])
-        if condition_rtf_pending.any(): 
-            df_flagged.loc[condition_rtf_pending, 'Flag_Awaiting_RTF'] = \
-                (current_date - df_flagged.loc[condition_rtf_pending, 'Template - Date']).dt.days > 2
-
-    df_flagged['Flag_Awaiting_Template'] = False
-    if 'Job Creation' in df_flagged.columns and 'Template - Date' in df_flagged.columns:
-        condition_template_pending = df_flagged['Job Creation'].notna() & \
-                                     df_flagged['Template - Date'].isna() & \
-                                     pd.api.types.is_datetime64_any_dtype(df_flagged['Job Creation'])
-        if condition_template_pending.any():
-            df_flagged.loc[condition_template_pending, 'Flag_Awaiting_Template'] = \
-                (current_date - df_flagged.loc[condition_template_pending, 'Job Creation']).dt.days > 2
-    
-    df_flagged['Flag_Awaiting_Cutlist'] = False
-    if 'Ready to Fab - Date' in df_flagged.columns and \
-       'Cutlist - Date' in df_flagged.columns and \
-       'Supplied By' in df_flagged.columns: # Check if 'Supplied By' still exists
-        is_not_laminate = ~df_flagged['Supplied By'].astype(str).str.strip().eq('ABB PF - 12')
-        rtf_date_exists = df_flagged['Ready to Fab - Date'].notna()
-        cutlist_date_missing = df_flagged['Cutlist - Date'].isna()
-        is_rtf_date_datetime = pd.api.types.is_datetime64_any_dtype(df_flagged['Ready to Fab - Date'])
-        valid_rows_for_cutlist_flag = rtf_date_exists & cutlist_date_missing & is_rtf_date_datetime & is_not_laminate
-        if valid_rows_for_cutlist_flag.any():
-            df_flagged.loc[valid_rows_for_cutlist_flag, 'Flag_Awaiting_Cutlist'] = \
-                (current_date - df_flagged.loc[valid_rows_for_cutlist_flag, 'Ready to Fab - Date']).dt.days > 3
-
-    threshold_flag_cols = ['Flag_Awaiting_RTF', 'Flag_Awaiting_Template', 'Flag_Awaiting_Cutlist']
-    threshold_flag_cols = [col for col in threshold_flag_cols if col in df_flagged.columns]
-    df_flagged['Flag_Any_Threshold_Delay'] = df_flagged[threshold_flag_cols].any(axis=1) if threshold_flag_cols else False
-    return df_flagged
-
-def flag_keyword_issues(df):
-    if df is None or df.empty: return pd.DataFrame()
-    df_flagged = df.copy()
-    keywords_to_flag = [
-        'must be', 'urgent', 'rush', 'asap', 'delay', 'delayed', 'leaving town',
-        'only time', 'call when', 'call on way', 'not home until', 'confirm time', 'schedule',
-        'broke', 'broken', 'missing', 'not ready', 'issue', 'problem', 'concern',
-        'damage', 'damaged', 'rework', 'remake', 'incorrect', 'error', 'hold',
-        'leak', 'leaking', 'scratch', 'chipped',
-        'crane', 'heavy', '3rd man', 'third man',
-        'change', 'changed', 'revision', 'adjust', 'adjustment', 're-template', 'retemplate',
-        'add', 'added', 'remove', 'removed', 'new drawing', 'cad adjustment',
-        'confirm edge', 'confirm sink', 'confirm color', 'choose', 'pick',
-        'stock sink', 'no sink onsite', 'sink not onsite'
-    ]
-    escaped_keywords = [re.escape(kw) for kw in keywords_to_flag]
-    keyword_pattern = r'\b(' + '|'.join(escaped_keywords) + r')\b'
-
-    def find_keywords_in_note(note_text, pattern):
-        if pd.isna(note_text) or not isinstance(note_text, str): return False
-        return bool(re.search(pattern, note_text, re.IGNORECASE))
-
-    # Updated list of notes columns to scan
-    notes_columns_to_scan = ['Next Sched. - Notes', 'Template - Notes', 'Install - Notes', 
-                             'Saw - Notes', 'Job Issues', 'QC - Notes', 'Ready to Fab - Notes',
-                             'Rework - Notes', 'Cutlist - Notes', 'Program - Notes', 
-                             'Material Pull - Notes', 'CNC - Notes', 'Polish/Fab Completion - Notes',
-                             'Hone Splash - Notes', 'Ship - Notes', 'Product Rcvd - Notes',
-                             'Repair - Notes', 'Delivery - Notes', 'Pick Up - Notes', 
-                             'Service - Notes', 'Callback - Notes', 'Invoice - Notes', 
-                             'Build Up - Notes', 'Tearout - Notes', 'Lift Help - Notes',
-                             'Courier - Notes', 'Tile Order - Notes', 'Tile Install - Notes',
-                             'Collect Final - Notes', 'Follow Up Call - Notes', 'Address Notes'
-                             ]
-    # Ensure only existing columns are processed
-    actual_notes_cols_to_scan = [col for col in notes_columns_to_scan if col in df_flagged.columns]
-
-    keyword_flag_columns_generated = []
-    for col_name in actual_notes_cols_to_scan:
-        # No need to check 'if col_name in df_flagged.columns:' again, already filtered
-        new_flag_col_name = f'Flag_Keyword_In_{col_name.replace(" - ", "_").replace(" ", "_").replace(".","_")}' # Handle '.' in col name for flag
-        df_flagged[new_flag_col_name] = df_flagged[col_name].apply(lambda note: find_keywords_in_note(note, keyword_pattern))
-        keyword_flag_columns_generated.append(new_flag_col_name)
-            
-    df_flagged['Flag_Any_Keyword_Issue'] = df_flagged[keyword_flag_columns_generated].any(axis=1) if keyword_flag_columns_generated else False
-    return df_flagged
-
-def flag_past_due_activities(df, current_date_str):
-    if df is None or df.empty: return pd.DataFrame()
-    df_flagged = df.copy()
-    current_date = pd.Timestamp(current_date_str)
-    completion_terms = ['complete', 'completed', 'done', 'installed', 'invoiced', 'paid', 'sent', 'received', 'closed', 'fabricated']
-    cancellation_terms = ['cancelled', 'canceled', 'void', 'voided']
-    
-    # Updated list of activities to check, ensure columns exist
-    activities_to_check_past_due = [
-        ('Next_Sched_Activity', 'Next Sched. - Date', 'Next Sched. - Status'), # New
-        ('Template', 'Template - Date', 'Template - Status'),
-        ('RTF', 'Ready_to_Fab', 'Ready to Fab - Date', 'Ready to Fab - Status'), # Special name for flag consistency
-        ('Install', 'Install - Date', 'Install - Status'),
-        ('Invoice', 'Invoice - Date', 'Invoice - Status'),
-        ('Collect_Final', 'Collect Final - Date', 'Collect Final - Status'),
-        ('Saw', 'Saw - Date', 'Saw - Status'),
-        ('Polish_Fab_Completion', 'Polish/Fab Completion - Date', 'Polish/Fab Completion - Status'),
-        # Add more activities here if they have distinct Date/Status columns and need this check
-        ('Cutlist', 'Cutlist - Date', 'Cutlist - Status'),
-        ('Program', 'Program - Date', 'Program - Status'),
-        ('QC', 'QC - Date', 'QC - Status'),
-        ('Delivery', 'Delivery - Date', 'Delivery - Status'),
-        ('Service', 'Service - Date', 'Service - Status'),
-
-    ]
-    past_due_flag_columns_generated = []
-
-    for activity_tuple in activities_to_check_past_due:
-        # Unpack tuple, handling the RTF special case if needed (though simplified here)
-        activity_name_for_flag, date_col, status_col = activity_tuple[0], activity_tuple[1], activity_tuple[2]
-        if activity_tuple[0] == 'RTF': # Ensure the flag name is consistent for RTF
-            activity_name_for_flag = activity_tuple[1]
 
 
-        new_flag_col = f'Flag_PastDue_{activity_name_for_flag}'
-        df_flagged[new_flag_col] = False # Initialize
-
-        # Check if necessary columns exist and date column is actually datetime
-        if not (date_col in df_flagged.columns and \
-                status_col in df_flagged.columns and \
-                pd.api.types.is_datetime64_any_dtype(df_flagged[date_col])):
-            # st.warning(f"Skipping past due check for {activity_name_for_flag}: Missing columns or '{date_col}' not datetime.")
-            continue 
-        
-        valid_date_rows = df_flagged[date_col].notna()
-        if not valid_date_rows.any(): 
-            continue
-
-        condition_date_past = pd.Series(False, index=df_flagged.index)
-        if valid_date_rows.sum() > 0: 
-            condition_date_past.loc[valid_date_rows] = (df_flagged.loc[valid_date_rows, date_col] < current_date)
-        
-        status_cleaned = df_flagged[status_col].fillna('').astype(str).str.lower().str.strip()
-        condition_not_complete = ~status_cleaned.isin(completion_terms)
-        condition_not_cancelled = ~status_cleaned.isin(cancellation_terms)
-        final_condition = condition_date_past & condition_not_complete & condition_not_cancelled
-        
-        df_flagged.loc[final_condition, new_flag_col] = True
-        past_due_flag_columns_generated.append(new_flag_col)
-
-    df_flagged['Flag_Any_PastDue_Activity'] = df_flagged[past_due_flag_columns_generated].any(axis=1) if past_due_flag_columns_generated else False
-    return df_flagged
-
-def determine_primary_issue_and_days(row, current_calc_date_ts):
-    if not isinstance(current_calc_date_ts, pd.Timestamp):
-        current_calc_date_ts = pd.Timestamp(current_calc_date_ts)
-
-    # --- Date columns mapping for "Days Behind" calculation ---
-    # (Ensure these column names match your DataFrame EXACTLY after loading)
-    date_cols_map = {
-        'Flag_PastDue_Next_Sched_Activity': 'Next Sched. - Date', # New
-        'Flag_PastDue_Install': 'Install - Date',
-        'Flag_PastDue_Polish_Fab_Completion': 'Polish/Fab Completion - Date',
-        'Flag_PastDue_Saw': 'Saw - Date',
-        'Flag_PastDue_Ready_to_Fab': 'Ready to Fab - Date', # Matches flag_past_due_activities
-        'Flag_PastDue_Invoice': 'Invoice - Date',
-        'Flag_PastDue_Collect_Final': 'Collect Final - Date',
-        'Flag_PastDue_Template': 'Template - Date',
-        'Flag_PastDue_Cutlist': 'Cutlist - Date', # New
-        'Flag_PastDue_Program': 'Program - Date', # New
-        'Flag_PastDue_QC': 'QC - Date', # New
-        'Flag_PastDue_Delivery': 'Delivery - Date', # New
-        'Flag_PastDue_Service': 'Service - Date', # New
-        'Flag_Awaiting_Cutlist': 'Ready to Fab - Date', 
-        'Flag_Awaiting_RTF': 'Template - Date',       
-        'Flag_Awaiting_Template': 'Job Creation'      
+# --- Cost‐calculation helper ---
+def calculate_cost(rec: dict, sq: float) -> dict:
+    uc  = rec.get("unit_cost", 0) or 0
+    mat = uc * MARKUP_FACTOR * sq
+    fab = FABRICATION_COST_PER_SQFT * sq
+    ins = INSTALL_COST_PER_SQFT * sq
+    ib  = (uc + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq
+    return {
+        "base_material_and_fab_component": mat + fab,
+        "base_install_cost_component":     ins,
+        "ib_cost_component":               ib,
+        "total_customer_facing_base_cost": mat + fab + ins
     }
-    # --- Issue descriptions mapping ---
-    issue_desc_map = {
-        'Flag_PastDue_Next_Sched_Activity': "Past Due: Next Sched. Activity", # New
-        'Flag_PastDue_Install': "Past Due: Install",
-        'Flag_PastDue_Polish_Fab_Completion': "Past Due: Polish/Fab",
-        'Flag_PastDue_Saw': "Past Due: Saw",
-        'Flag_PastDue_Ready_to_Fab': "Past Due: RTF", 
-        'Flag_PastDue_Invoice': "Past Due: Invoice",
-        'Flag_PastDue_Collect_Final': "Past Due: Collect Final",
-        'Flag_PastDue_Template': "Past Due: Template",
-        'Flag_PastDue_Cutlist': "Past Due: Cutlist", # New
-        'Flag_PastDue_Program': "Past Due: Program", # New
-        'Flag_PastDue_QC': "Past Due: QC", # New
-        'Flag_PastDue_Delivery': "Past Due: Delivery", # New
-        'Flag_PastDue_Service': "Past Due: Service", # New
-        'Flag_Awaiting_Cutlist': "Delay: Awaiting Cutlist",
-        'Flag_Awaiting_RTF': "Delay: Awaiting RTF",
-        'Flag_Awaiting_Template': "Delay: Awaiting Template",
-        'Flag_Keyword_In_Next_Sched_Notes': "Keyword: Next Sched. Notes", # New
-        'Flag_Keyword_In_Install_Notes': "Keyword: Install Notes",
-        'Flag_Keyword_In_Template_Notes': "Keyword: Template Notes",
-        'Flag_Keyword_In_Job_Issues': "Keyword: Job Issues",
-        'Flag_Keyword_In_QC_Notes': "Keyword: QC Notes",
-        'Flag_Keyword_In_Saw_Notes': "Keyword: Saw Notes"
-        # Add more keyword flags if new notes columns are scanned
-    }
-    # --- Order of checking flags for primary issue ---
-    flag_check_order = [
-        'Flag_PastDue_Install', 'Flag_PastDue_Next_Sched_Activity', # Added Next Sched
-        'Flag_PastDue_Polish_Fab_Completion', 'Flag_PastDue_Saw', 
-        'Flag_PastDue_Ready_to_Fab', 'Flag_PastDue_Invoice', 'Flag_PastDue_Collect_Final', 
-        'Flag_PastDue_Template', 'Flag_PastDue_Cutlist', 'Flag_PastDue_Program', 
-        'Flag_PastDue_QC', 'Flag_PastDue_Delivery', 'Flag_PastDue_Service',
-        'Flag_Awaiting_Cutlist', 'Flag_Awaiting_RTF', 'Flag_Awaiting_Template', 
-        'Flag_Keyword_In_Install_Notes', 'Flag_Keyword_In_Template_Notes',
-        'Flag_Keyword_In_Next_Sched_Notes', # Added Next Sched Notes
-        'Flag_Keyword_In_Job_Issues', 'Flag_Keyword_In_QC_Notes', 'Flag_Keyword_In_Saw_Notes'
-    ]
-
-    for flag_col in flag_check_order:
-        if row.get(flag_col, False): # Check if flag is True for the row
-            issue_description = issue_desc_map.get(flag_col, "Unknown Issue")
-            days_behind = "N/A"
-            date_col_for_days = date_cols_map.get(flag_col)
-            
-            if date_col_for_days and \
-               date_col_for_days in row and \
-               pd.notna(row[date_col_for_days]) and \
-               isinstance(row[date_col_for_days], pd.Timestamp):
-                try:
-                    days_behind = (current_calc_date_ts - row[date_col_for_days]).days
-                except TypeError: 
-                    days_behind = "Error Calc Days" 
-            return issue_description, days_behind
-            
-    return "Other Issue", "N/A" # Fallback if no specific flag matched
 
 
-def write_to_google_sheet(spreadsheet_obj, worksheet_name, df_to_write):
-    if spreadsheet_obj is None or df_to_write is None:
-        st.warning("Spreadsheet object or DataFrame to write is missing. Cannot write to Google Sheet.")
-        return False
+# --- Compose HTML email body ---
+def compose_breakdown_email_body(
+    job_name: str,
+    selected_branch: str,
+    selected_salesperson: str,
+    rec: dict,
+    costs: dict,
+    fab_plant: str,
+    selected_thickness: str,
+    sq_ft_used: float,
+    additional_costs: float,
+    subtotal: float,
+    gst_amount: float,
+    final_total: float
+) -> str:
+    def fmt(v):
+        return f"${v:,.2f}"
+    tz  = pytz.timezone("America/Vancouver")
+    now = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
+    job = job_name or "Unnamed Job"
+
+    return f"""<html>
+<head><style>
+  body {{ font-family: Arial, sans-serif; color: #333; }}
+  .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+  h1 {{ color: #0056b3; margin-bottom: 4px; }}
+  p.meta {{ margin: 0; font-size: 0.9rem; color: #555; }}
+  h2 {{ color: #0056b3; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 20px; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
+  th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
+  th {{ background: #f0f0f0; }}
+  .grand-total-row td {{ font-weight: bold; background: #c9e0ff; font-size: 1rem; }}
+  .footer {{ font-size: 10px; color: #666; text-align: center; margin-top: 20px; }}
+</style></head>
+<body>
+  <div class="container">
+    <h1>CounterPro Estimate</h1>
+    <p class="meta">
+      <strong>Branch:</strong> {selected_branch} &nbsp;&nbsp;
+      <strong>Salesperson:</strong> {selected_salesperson}
+    </p>
+
+    <h2>Project &amp; Material Overview</h2>
+    <table>
+      <tr><th>Detail</th><th>Value</th></tr>
+      <tr><td>Job Name:</td><td>{job}</td></tr>
+      <tr><td>Slab Selected:</td><td>{rec.get("Full Name", "N/A")}</td></tr>
+      <tr><td>Material Source:</td><td>{rec.get("Location", "N/A")}</td></tr>
+      <tr><td>Fabrication Plant:</td><td>{fab_plant}</td></tr>
+      <tr><td>Thickness:</td><td>{selected_thickness}</td></tr>
+      <tr><td>Sq Ft (for pricing):</td><td>{sq_ft_used} sq.ft</td></tr>
+      <tr><td>Slab Sq Ft (Total):</td><td>{rec.get("available_sq_ft", 0):.2f} sq.ft</td></tr>
+      <tr><td>Unique Slabs:</td><td>{rec.get("slab_count", 0)}</td></tr>
+      <tr><td>Serial Numbers:</td><td>{rec.get("serial_numbers", "N/A")}</td></tr>
+    </table>
+
+    <h2>Cost Components</h2>
+    <table>
+      <tr><th>Component</th><th>Amount</th></tr>
+      <tr><td>Material &amp; Fabrication:</td><td>{fmt(costs["base_material_and_fab_component"])}</td></tr>
+      <tr><td>Installation:</td><td>{fmt(costs["base_install_cost_component"])}</td></tr>
+      <tr><td>IB Cost (Internal):</td><td>{fmt(costs["ib_cost_component"])}</td></tr>
+    </table>
+
+    <h2>Totals</h2>
+    <table>
+      <tr><th>Description</th><th>Amount</th></tr>
+      <tr><td>Base Estimate:</td><td>{fmt(costs["total_customer_facing_base_cost"])}</td></tr>
+      <tr><td>Additional Costs (sinks, tile, plumbing):</td><td>{fmt(additional_costs)}</td></tr>
+      <tr><td>Subtotal:</td><td>{fmt(subtotal)}</td></tr>
+      <tr><td>GST (5%):</td><td>{fmt(gst_amount)}</td></tr>
+      <tr class="grand-total-row"><td>Final Total:</td><td>{fmt(final_total)}</td></tr>
+    </table>
+
+    <div class="footer">Generated by CounterPro on {now}</div>
+  </div>
+</body>
+</html>"""
+
+
+# --- Send email helper ---
+def send_email(subject: str, body: str, to_email: str):
     try:
-        worksheet = spreadsheet_obj.worksheet(worksheet_name)
-    except gspread.exceptions.WorksheetNotFound:
-        st.info(f"Worksheet '{worksheet_name}' not found. Creating it...")
-        num_cols = len(df_to_write.columns) if not df_to_write.empty else 20 
-        worksheet = spreadsheet_obj.add_worksheet(title=worksheet_name, rows=max(100, len(df_to_write) + 5), cols=num_cols + 5)
-    
-    worksheet.clear()
-    if df_to_write.empty:
-        st.info(f"No data to write to '{worksheet_name}'. Sheet cleared.")
-        return True
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = st.secrets["SENDER_FROM_EMAIL"]
+        msg["To"]      = to_email
+        msg.attach(MIMEText(body, "html"))
 
-    df_export = df_to_write.fillna('').astype(str) 
-    export_values = [df_export.columns.values.tolist()] + df_export.values.tolist()
-    worksheet.update(export_values, value_input_option='USER_ENTERED')
-    st.success(f"Successfully wrote {len(df_to_write)} rows to worksheet: '{worksheet_name}'")
-    return True
-    
-# --- Main App Logic ---
-st.sidebar.header("⚙️ Configuration")
-creds_from_secrets = get_google_creds()
-uploaded_creds_dict = None
+        recipients = [to_email]
+        cc = st.secrets.get("QUOTE_TRACKING_CC_EMAIL")
+        if cc:
+            msg["Cc"] = cc
+            recipients.append(cc)
 
-if not creds_from_secrets:
-    st.sidebar.subheader("Google Sheets Credentials")
-    st.sidebar.markdown("Upload your Google Cloud Service Account JSON key file. This is not stored after your session ends.")
-    uploaded_file = st.sidebar.file_uploader("Upload Service Account JSON", type="json")
-    if uploaded_file:
-        try:
-            creds_json_str = StringIO(uploaded_file.getvalue().decode("utf-8")).read()
-            uploaded_creds_dict = json.loads(creds_json_str)
-        except json.JSONDecodeError:
-            st.sidebar.error("Invalid JSON file. Please upload a valid Google Service Account key file.")
-        except Exception as e:
-            st.sidebar.error(f"Error reading uploaded file: {e}")
+        with smtplib.SMTP(
+            st.secrets["SMTP_SERVER"],
+            st.secrets["SMTP_PORT"]
+        ) as server:
+            server.starttls()
+            server.login(
+                st.secrets["EMAIL_USER"],
+                st.secrets["EMAIL_PASSWORD"]
+            )
+            server.sendmail(msg["From"], recipients, msg.as_string())
 
-final_creds = creds_from_secrets if creds_from_secrets else uploaded_creds_dict
-
-default_calc_date = pd.Timestamp('2025-06-04').date() 
-current_calc_date_input = st.sidebar.date_input("Date for Calculations", value=default_calc_date)
-current_calc_date_str = current_calc_date_input.strftime('%Y-%m-%d')
-current_calc_date_ts = pd.Timestamp(current_calc_date_input)
-
-if 'df_analyzed' not in st.session_state: st.session_state.df_analyzed = None
-if 'spreadsheet_obj' not in st.session_state: st.session_state.spreadsheet_obj = None
-if 'resolved_job_indices' not in st.session_state: st.session_state.resolved_job_indices = set()
-if 'snoozed_job_indices' not in st.session_state: st.session_state.snoozed_job_indices = set()
-if 'assignments' not in st.session_state: st.session_state.assignments = {} 
-if 'current_page' not in st.session_state: st.session_state.current_page = 0
+        st.success("✅ Quote emailed successfully.")
+    except Exception as e:
+        st.error(f"Email failed: {e}")
 
 
-if final_creds:
-    if st.sidebar.button("🔄 Load and Analyze Job Data", key="load_analyze_button"):
-        st.session_state.df_analyzed = None 
-        st.session_state.resolved_job_indices = set() 
-        st.session_state.snoozed_job_indices = set()
-        st.session_state.assignments = {}
-        st.session_state.current_page = 0 
-
-        with st.spinner("Loading data from Google Sheets..."):
-            raw_df, spreadsheet, gc_instance = load_google_sheet(final_creds, SPREADSHEET_ID, DATA_WORKSHEET_NAME)
-            st.session_state.spreadsheet_obj = spreadsheet
-        
-        if raw_df is not None and not raw_df.empty:
-            st.success(f"Successfully loaded {len(raw_df)} jobs from '{DATA_WORKSHEET_NAME}'.")
-            with st.spinner("Processing and flagging data..."):
-                df_processed = preprocess_data(raw_df) 
-                if df_processed.empty and not raw_df.empty: 
-                    st.warning("Preprocessing returned an empty DataFrame. Date parsing might have issues.")
-                df_threshold_flagged = flag_threshold_delays(df_processed, current_calc_date_str)
-                df_keyword_flagged = flag_keyword_issues(df_threshold_flagged)
-                df_past_due_flagged = flag_past_due_activities(df_keyword_flagged, current_calc_date_str)
-            st.session_state.df_analyzed = df_past_due_flagged
-
-            if st.session_state.df_analyzed is not None and not st.session_state.df_analyzed.empty:
-                all_flag_summary_cols = [col for col in ['Flag_Any_Threshold_Delay', 'Flag_Any_Keyword_Issue', 'Flag_Any_PastDue_Activity'] if col in st.session_state.df_analyzed.columns]
-                st.session_state.df_analyzed['Flag_Overall_Needs_Attention'] = st.session_state.df_analyzed[all_flag_summary_cols].any(axis=1) if all_flag_summary_cols else False
-                st.success("Data analysis complete!")
-            elif st.session_state.df_analyzed is not None and st.session_state.df_analyzed.empty:
-                 st.info("Data analysis complete, but no jobs matched criteria or the source data led to an empty result after processing.")
-            else: 
-                st.error("Data analysis failed after loading. df_analyzed is None.")
-        elif raw_df is not None and raw_df.empty:
-             st.info(f"Source data sheet '{DATA_WORKSHEET_NAME}' is empty. No analysis performed.")
-        else: 
-            st.error("Failed to load data from Google Sheets. Check credentials and sheet sharing.")
-elif not creds_from_secrets :
-     st.sidebar.info("Please upload your Google Service Account JSON key to begin.")
+def get_fab_plant(branch: str) -> str:
+    """If branch is one of (Vernon, Victoria, Vancouver), return 'Abbotsford'; else 'Saskatoon'."""
+    return "Abbotsford" if branch in ["Vernon", "Victoria", "Vancouver"] else "Saskatoon"
 
 
-# --- Display Interactive "todo" List ---
-if st.session_state.df_analyzed is not None and not st.session_state.df_analyzed.empty and 'Flag_Overall_Needs_Attention' in st.session_state.df_analyzed.columns:
-    df_display_full = st.session_state.df_analyzed.copy()
-    if not df_display_full.index.is_unique:
-        df_display_full = df_display_full.reset_index(drop=True)
+# --- MAIN APP UI ---
+st.title("CounterPro")
 
-    priority_jobs_df_all = df_display_full[df_display_full['Flag_Overall_Needs_Attention'] == True].copy()
+# ── 1) Branch & Salesperson (side by side) ───────────────────────────────────────
+df_sp = load_salespeople_sheet(SALESPEOPLE_TAB)
+selected_email = None
 
-    if not priority_jobs_df_all.empty:
-        issues_and_days_series = priority_jobs_df_all.apply(lambda row: determine_primary_issue_and_days(row, current_calc_date_ts), axis=1)
-        priority_jobs_df_all.loc[:, 'Primary Issue'] = [item[0] for item in issues_and_days_series]
-        priority_jobs_df_all.loc[:, 'Days Behind'] = [item[1] for item in issues_and_days_series]
-        
-        # Ensure 'Install - Date' column exists and is datetime before sorting
-        if 'Install - Date' in priority_jobs_df_all.columns and pd.api.types.is_datetime64_any_dtype(priority_jobs_df_all['Install - Date']):
-            priority_jobs_df_all.sort_values(by='Install - Date', ascending=True, na_position='last', inplace=True)
-        
-        visible_priority_jobs_df = priority_jobs_df_all[
-            ~priority_jobs_df_all.index.isin(list(st.session_state.resolved_job_indices)) &
-            ~priority_jobs_df_all.index.isin(list(st.session_state.snoozed_job_indices))
-        ].copy() 
+if not df_sp.empty:
+    df_sp["Branch"] = df_sp["Branch"].astype(str).str.strip().str.title()
+    branch_list = sorted(df_sp["Branch"].dropna().unique())
 
-        st.header(f"🚩 Jobs Requiring Attention ({len(visible_priority_jobs_df)} currently shown)")
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_branch = st.selectbox("Select Branch", branch_list)
+    with col2:
+        sales_for_branch = df_sp[df_sp["Branch"] == selected_branch]
+        sp_options = ["None"] + sales_for_branch["SalespersonName"].tolist()
+        selected_salesperson = st.selectbox("Select Salesperson", sp_options)
 
-        if not visible_priority_jobs_df.empty:
-            total_jobs = len(visible_priority_jobs_df)
-            total_pages = math.ceil(total_jobs / ITEMS_PER_PAGE)
-            
-            if st.session_state.current_page >= total_pages and total_pages > 0:
-                st.session_state.current_page = total_pages - 1
-            if st.session_state.current_page < 0:
-                 st.session_state.current_page = 0
+    if selected_salesperson != "None":
+        selected_email = sales_for_branch.loc[
+            sales_for_branch["SalespersonName"] == selected_salesperson, "Email"
+        ].iat[0]
+else:
+    st.warning("⚠️ No salespeople data loaded.")
+    selected_branch = ""
+    selected_salesperson = ""
 
-            start_idx = st.session_state.current_page * ITEMS_PER_PAGE
-            end_idx = start_idx + ITEMS_PER_PAGE
-            jobs_to_display_on_page = visible_priority_jobs_df.iloc[start_idx:end_idx]
+# ── 2) Load Inventory from PIO CSV ──────────────────────────────────────────────
+try:
+    df_inv = pd.read_csv(INVENTORY_CSV_URL)
+    df_inv.columns = df_inv.columns.str.strip()
+except Exception as e:
+    st.error(f"❌ Could not fetch inventory CSV: {e}")
+    st.stop()
 
-            for job_index, row_data in jobs_to_display_on_page.iterrows(): 
-                job_name_display = row_data.get('Job Name', f"Job Index {job_index}")
-                primary_issue_display = row_data.get('Primary Issue', "N/A")
-                days_behind_display = row_data.get('Days Behind', "N/A")
-                install_date_display = row_data.get('Install - Date') # This should be a Timestamp object if processed correctly
-                
-                install_date_str = "N/A"
-                if pd.notna(install_date_display) and isinstance(install_date_display, pd.Timestamp):
-                    install_date_str = install_date_display.strftime('%Y-%m-%d')
-                elif pd.notna(install_date_display): # If it's a string already (should not happen if preprocess is right)
-                    install_date_str = str(install_date_display)
+if df_inv.empty:
+    st.error("❌ Loaded inventory CSV is empty.")
+    st.stop()
 
+# ── 3) FILTER BY BRANCH→SOURCE LOCATIONS ────────────────────────────────────────
+branch_to_material_sources = {
+    "Vernon":    ["Vernon", "Abbotsford"],
+    "Victoria":  ["Vernon", "Abbotsford"],
+    "Vancouver": ["Vernon", "Abbotsford"],
+    "Calgary":   ["Edmonton", "Saskatoon"],
+    "Edmonton":  ["Edmonton", "Saskatoon"],
+    "Saskatoon": ["Edmonton", "Saskatoon"],
+    "Winnipeg":  ["Edmonton", "Saskatoon"],
+}
 
-                st.subheader(f"{job_name_display}")
-                item_cols = st.columns([3, 2, 3])
-                item_cols[0].markdown(f"**Issue:** {primary_issue_display}")
-                item_cols[1].markdown(f"**Days:** {days_behind_display}")
-                item_cols[2].markdown(f"**Install Date:** {install_date_str}")
+allowed_sources = branch_to_material_sources.get(selected_branch, [])
+if allowed_sources:
+    df_inv = df_inv[df_inv["Location"].isin(allowed_sources)]
+else:
+    st.warning(f"No material‐source mapping for branch '{selected_branch}'. Showing all inventory.")
 
-                with st.expander("Show Details & Actions", expanded=False):
-                    st.write("--- Job Details ---")
-                    st.write("**Key Dates:**")
-                    # Ensure this list matches new column structure
-                    date_cols_to_show_detail = [
-                        'Next Sched. - Date', 'Job Creation', 'Template - Date', 'Ready to Fab - Date', 
-                        'Cutlist - Date', 'Saw - Date', 'Polish/Fab Completion - Date', 
-                        'Install - Date', 'Invoice - Date', 'Collect Final - Date', 'Service - Date'
-                        ]
-                    for col in date_cols_to_show_detail:
-                        if col in row_data and pd.notna(row_data[col]) and isinstance(row_data[col], pd.Timestamp):
-                            st.markdown(f"  *{col.replace(' - Date', '')}:* {row_data[col].strftime('%Y-%m-%d')}")
-                        elif col in row_data and pd.notna(row_data[col]): # If already string or other non-Timestamp
-                             st.markdown(f"  *{col.replace(' - Date', '')}:* {row_data[col]}")
+# ── 4) Normalize “Available Qty” → “Available Sq Ft” ────────────────────────────
+if "Available Qty" in df_inv.columns:
+    df_inv["Available Sq Ft"] = pd.to_numeric(df_inv["Available Qty"], errors="coerce")
+elif "Available Sq Ft" in df_inv.columns:
+    df_inv["Available Sq Ft"] = pd.to_numeric(df_inv["Available Sq Ft"], errors="coerce")
+else:
+    st.error(
+        "❌ Could not find either 'Available Qty' or 'Available Sq Ft' in the inventory CSV.\n"
+        f"Columns found: {df_inv.columns.tolist()}"
+    )
+    st.stop()
 
+# ── 5) Normalize “Serialized Unit Cost” → per-sq.ft `unit_cost` ─────────────────
+if "Serialized Unit Cost" in df_inv.columns:
+    df_inv["unit_cost"] = pd.to_numeric(
+        df_inv["Serialized Unit Cost"]
+            .astype(str)
+            .str.replace(r"[\$,]", "", regex=True),
+        errors="coerce"
+    )
+elif "Serialized On Hand Cost" in df_inv.columns:
+    df_inv["SerialOnHandCost"] = pd.to_numeric(
+        df_inv["Serialized On Hand Cost"]
+            .astype(str)
+            .str.replace(r"[\$,]", "", regex=True),
+        errors="coerce"
+    )
+    df_inv["unit_cost"] = df_inv["SerialOnHandCost"] / df_inv["Available Sq Ft"].replace(0, pd.NA)
+else:
+    st.error(
+        "❌ Could not find 'Serialized Unit Cost' or 'Serialized On Hand Cost' in the inventory CSV.\n"
+        f"Columns found: {df_inv.columns.tolist()}"
+    )
+    st.stop()
 
-                    st.write("**Notes:**")
-                    # Ensure this list matches new column structure
-                    notes_cols_to_display = [
-                        'Next Sched. - Notes', 'Template - Notes', 'Install - Notes', 
-                        'Saw - Notes', 'Job Issues', 'QC - Notes', 'Address Notes'
-                        ] 
-                    for note_col in notes_cols_to_display:
-                        if note_col in row_data and pd.notna(row_data[note_col]) and str(row_data[note_col]).strip() != '':
-                            st.markdown(f"**{note_col}:**")
-                            st.text_area(f"", value=str(row_data[note_col]), height=100, key=f"note_{note_col}_{job_index}", disabled=True)
-                    
-                    st.write("**Actions:**")
-                    action_cols = st.columns(3)
-                    if action_cols[0].button("Mark Resolved (Session)", key=f"resolve_{job_index}"):
-                        st.session_state.resolved_job_indices.add(job_index)
-                        st.rerun() 
-                    if action_cols[1].button("Snooze (Session)", key=f"snooze_{job_index}"):
-                        st.session_state.snoozed_job_indices.add(job_index)
-                        st.rerun() 
-                    
-                    current_assignment = st.session_state.assignments.get(job_index, "")
-                    new_assignment = st.text_input("Assign/Notify To:", value=current_assignment, key=f"assign_{job_index}")
-                    if new_assignment != current_assignment:
-                        st.session_state.assignments[job_index] = new_assignment
-                        st.info(f"Assignment for {job_name_display} updated in session to: {new_assignment}")
-                st.markdown("---") 
-            
-            if total_pages > 1:
-                page_cols = st.columns(3)
-                if page_cols[0].button("⬅️ Previous Page", disabled=(st.session_state.current_page == 0)):
-                    st.session_state.current_page -= 1
-                    st.rerun()
-                page_cols[1].write(f"Page {st.session_state.current_page + 1} of {total_pages}")
-                if page_cols[2].button("Next Page ➡️", disabled=(st.session_state.current_page >= total_pages - 1)):
-                    st.session_state.current_page += 1
-                    st.rerun()
+df_inv = df_inv[
+    df_inv["Available Sq Ft"].notna() & (df_inv["Available Sq Ft"] > 0) &
+    df_inv["unit_cost"].notna() & (df_inv["unit_cost"] > 0)
+]
 
-            if st.button("✍️ Update 'todo' Sheet (with current view)", key="update_todo_sheet_button_interactive"):
-                if st.session_state.spreadsheet_obj:
-                    with st.spinner(f"Writing to '{TODO_WORKSHEET_NAME}' sheet..."):
-                        # Define export columns based on available data
-                        export_cols = ['Primary Issue', 'Days Behind', 'Job Name']
-                        if 'Salesperson' in visible_priority_jobs_df.columns: export_cols.append('Salesperson')
-                        # Add other key identifying columns that exist
-                        for key_col in ['Job Creation', 'Template - Date', 'Install - Date', 'Next Sched. - Activity', 'Next Sched. - Date']:
-                             if key_col in visible_priority_jobs_df.columns:
-                                export_cols.append(key_col)
-                        
-                        # 'Job Status' might have been removed by user, or might not be in priority_df
-                        # Check existence before adding
-                        if 'Job Status' in visible_priority_jobs_df.columns:
-                            export_cols.append('Job Status')
+# ── 6) Build “Full Name” column ─────────────────────────────────────────────────
+df_inv["Brand"] = df_inv["Brand"].astype(str).str.strip()
+df_inv["Color"] = df_inv["Color"].astype(str).str.strip()
+df_inv["Full Name"] = df_inv["Brand"] + " - " + df_inv["Color"]
 
+# ── 7) Thickness selector ──────────────────────────────────────────────────────
+df_inv["Thickness"] = df_inv["Thickness"].astype(str).str.strip().str.lower()
+th_list = sorted(df_inv["Thickness"].unique())
+selected_thickness = st.selectbox(
+    "Select Thickness",
+    th_list,
+    index=th_list.index("3cm") if "3cm" in th_list else 0
+)
+df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
 
-                        true_flag_cols_in_visible = [col for col in visible_priority_jobs_df.columns if col.startswith('Flag_') and \
-                                          col not in ['Flag_Any_Threshold_Delay', 'Flag_Any_Keyword_Issue', 
-                                                      'Flag_Any_PastDue_Activity', 'Flag_Overall_Needs_Attention', 
-                                                      'Primary Issue', 'Days Behind'] and \
-                                          visible_priority_jobs_df[col].any()]
-                        export_cols.extend(sorted(true_flag_cols_in_visible))
-                        # Ensure all columns in export_cols actually exist in the dataframe before selection
-                        export_cols = [col for col in export_cols if col in visible_priority_jobs_df.columns] 
-                        
-                        export_df_final = visible_priority_jobs_df[export_cols].copy()
-                        write_to_google_sheet(st.session_state.spreadsheet_obj, TODO_WORKSHEET_NAME, export_df_final)
-                else:
-                    st.error("Spreadsheet object not available. Cannot write to Google Sheet. Try reloading data.")
-        else: 
-            if not priority_jobs_df_all.empty and visible_priority_jobs_df.empty :
-                 st.info("All priority jobs have been locally resolved or snoozed for this session.")
-            else: 
-                st.info("No jobs currently require attention based on the defined criteria.")
-            
-            if st.session_state.spreadsheet_obj and st.button("Clear 'todo' Sheet (as no jobs to show/list)", key="clear_todo_button_interactive"):
-                 with st.spinner(f"Clearing '{TODO_WORKSHEET_NAME}' sheet..."):
-                    write_to_google_sheet(st.session_state.spreadsheet_obj, TODO_WORKSHEET_NAME, pd.DataFrame())
-    else: 
-        st.warning("Overall attention flag not found. Analysis might be incomplete.")
+# ── 8) Square footage input ────────────────────────────────────────────────────
+sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
+sq_ft_used  = max(sq_ft_input, MINIMUM_SQ_FT)
 
-    with st.expander("Show Detailed Flag Counts (from full analyzed data)"):
-        df_full_for_counts = st.session_state.df_analyzed 
-        st.subheader("Threshold-Based Delays")
-        if 'Flag_Awaiting_RTF' in df_full_for_counts.columns: st.metric("Awaiting RTF (>2 days)", df_full_for_counts['Flag_Awaiting_RTF'].sum())
-        if 'Flag_Awaiting_Template' in df_full_for_counts.columns: st.metric("Awaiting Template (>2 days)", df_full_for_counts['Flag_Awaiting_Template'].sum())
-        if 'Flag_Awaiting_Cutlist' in df_full_for_counts.columns: st.metric("Awaiting Cutlist (>3 days, non-laminate)", df_full_for_counts['Flag_Awaiting_Cutlist'].sum())
-        
-        st.subheader("Keyword Issues in Notes")
-        # Update this list to match notes_columns_to_scan in flag_keyword_issues
-        notes_cols_for_keyword_summary = ['Next Sched. - Notes', 'Template - Notes', 'Install - Notes', 
-                             'Saw - Notes', 'Job Issues', 'QC - Notes', 'Ready to Fab - Notes',
-                             'Rework - Notes', 'Cutlist - Notes', 'Program - Notes', 
-                             'Material Pull - Notes', 'CNC - Notes', 'Polish/Fab Completion - Notes',
-                             'Hone Splash - Notes', 'Ship - Notes', 'Product Rcvd - Notes',
-                             'Repair - Notes', 'Delivery - Notes', 'Pick Up - Notes', 
-                             'Service - Notes', 'Callback - Notes', 'Invoice - Notes', 
-                             'Build Up - Notes', 'Tearout - Notes', 'Lift Help - Notes',
-                             'Courier - Notes', 'Tile Order - Notes', 'Tile Install - Notes',
-                             'Collect Final - Notes', 'Follow Up Call - Notes', 'Address Notes'
-                             ]
-        actual_notes_cols_for_summary = [col for col in notes_cols_for_keyword_summary if col in df_full_for_counts.columns]
+# ── 9) Group, filter, and price ────────────────────────────────────────────────
+df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
+    available_sq_ft = ("Available Sq Ft", "sum"),
+    unit_cost       = ("unit_cost", "mean"),
+    slab_count      = ("Serial Number", "nunique"),
+    serial_numbers  = ("Serial Number", lambda x: ", ".join(sorted(x.astype(str).unique())))
+).reset_index()
 
-        for note_col_original_name in actual_notes_cols_for_summary:
-            flag_col_name = f'Flag_Keyword_In_{note_col_original_name.replace(" - ", "_").replace(" ", "_").replace(".","_")}'
-            if flag_col_name in df_full_for_counts.columns:
-                st.write(f"*Keyword in '{note_col_original_name}'*: {df_full_for_counts[flag_col_name].sum()} jobs")
-        
-        st.subheader("Past Due Activities")
-        past_due_activities_display = [
-            ('Next Sched. Activity', 'Flag_PastDue_Next_Sched_Activity'),
-            ('Template', 'Flag_PastDue_Template'), ('RTF', 'Flag_PastDue_Ready_to_Fab'), ('Install', 'Flag_PastDue_Install'),
-            ('Invoice', 'Flag_PastDue_Invoice'), ('Collect Final', 'Flag_PastDue_Collect_Final'),
-            ('Saw', 'Flag_PastDue_Saw'), ('Polish/Fab Completion', 'Flag_PastDue_Polish_Fab_Completion'),
-            ('Cutlist', 'Flag_PastDue_Cutlist'), ('Program', 'Flag_PastDue_Program'),
-            ('QC', 'Flag_PastDue_QC'), ('Delivery', 'Flag_PastDue_Delivery'), ('Service', 'Flag_PastDue_Service')
-        ]
-        for friendly_name, flag_col in past_due_activities_display:
-            if flag_col in df_full_for_counts.columns: 
-                st.write(f"*Past Due '{friendly_name}'*: {df_full_for_counts[flag_col].sum()} jobs")
+required = sq_ft_used * 1.1
+df_agg = df_agg[df_agg["available_sq_ft"] >= required]
+df_agg["price"] = df_agg.apply(
+    lambda r: calculate_cost(r, sq_ft_used)["total_customer_facing_base_cost"],
+    axis=1
+)
 
-    if st.checkbox("Show Full Analyzed Data Table (with all flags)", key="show_full_data_interactive"):
-        st.subheader("Full Analyzed Data (before local resolve/snooze)")
-        st.dataframe(df_display_full, use_container_width=True)
+if df_agg.empty:
+    st.error("❌ No slabs have enough material (including 10% buffer).")
+    st.stop()
 
-elif final_creds and st.session_state.df_analyzed is not None and st.session_state.df_analyzed.empty:
-    st.info("Analysis complete. The source data might be empty or no jobs matched the flagging criteria after processing.")
-elif not final_creds and not creds_from_secrets :
-     st.info("Please upload your Google Service Account JSON key in the sidebar and click 'Load and Analyze Job Data'.")
+# ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
+mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
+span = ma - mi
+step = 100 if span >= 100 else (span if span > 0 else 1)
+budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
 
-st.sidebar.markdown("---")
-st.sidebar.info("Remember to configure `GOOGLE_CREDS_JSON` in Streamlit Secrets for deployed apps.")
+df_agg = df_agg[df_agg["price"] <= budget]
+if df_agg.empty:
+    st.error("❌ No materials fall within that budget.")
+    st.stop()
+
+# ── 11) “Choose a material” dropdown (showing final $/sq ft) ────────────────────
+records = df_agg.to_dict("records")
+selected = st.selectbox(
+    "Choose a material",
+    records,
+    format_func=lambda r: (
+        f"{r['Full Name']} – "
+        f"${calculate_cost(r, sq_ft_used)['total_customer_facing_base_cost'] / sq_ft_used:,.2f}/sq ft"
+    )
+)
+
+if selected:
+    costs = calculate_cost(selected, sq_ft_used)
+
+    st.markdown(f"**Material:** {selected['Full Name']}")
+    st.markdown(f"**Source Location:** {selected['Location']}")
+    q = selected["Full Name"].replace(" ", "+")
+    st.markdown(f"[🔎 Google Image Search](https://www.google.com/search?q={q}+countertop)")
+
+    st.markdown("---")
+
+    job_name         = st.text_input("Job Name (optional)")
+    additional_costs = st.number_input(
+        "Additional Costs – sinks, tile, plumbing",
+        value=0.0, min_value=0.0, step=10.0, format="%.2f"
+    )
+
+    subtotal   = costs["total_customer_facing_base_cost"] + additional_costs
+    gst_amount = subtotal * GST_RATE
+    final_total = subtotal + gst_amount
+
+    st.markdown(
+        f"**Subtotal:** <span style='color:green'>${subtotal:,.2f}</span>", 
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f"**GST (5%):** <span style='color:green'>${gst_amount:,.2f}</span>",
+        unsafe_allow_html=True
+    )
+    st.markdown(
+        f"### <span style='color:green'>Final Total: ${final_total:,.2f}</span>",
+        unsafe_allow_html=True
+    )
+
+    if selected["slab_count"] > 1:
+        st.info("Note: This selection uses multiple slabs; color/pattern may vary slightly.")
+
+    if selected_email and st.button("📧 Email Quote"):
+        body = compose_breakdown_email_body(
+            job_name,
+            selected_branch,
+            selected_salesperson,
+            selected,
+            costs,
+            get_fab_plant(selected_branch),
+            selected_thickness,
+            sq_ft_used,
+            additional_costs,
+            subtotal,
+            gst_amount,
+            final_total
+        )
+        subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"
+        send_email(subject, body, selected_email)

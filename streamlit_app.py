@@ -544,11 +544,16 @@ if st.session_state.df_analyzed is not None and not st.session_state.df_analyzed
                         # Define export columns based on available data
                         export_cols = ['Primary Issue', 'Days Behind', 'Job Name']
                         if 'Salesperson' in visible_priority_jobs_df.columns: export_cols.append('Salesperson')
-                        if 'Job Creation' in visible_priority_jobs_df.columns: export_cols.append('Job Creation')
-                        if 'Template - Date' in visible_priority_jobs_df.columns: export_cols.append('Template - Date')
-                        if 'Install - Date' in visible_priority_jobs_df.columns: export_cols.append('Install - Date')
-                        # 'Job Status' might have been removed, check before adding
-                        # if 'Job Status' in visible_priority_jobs_df.columns: export_cols.append('Job Status')
+                        # Add other key identifying columns that exist
+                        for key_col in ['Job Creation', 'Template - Date', 'Install - Date', 'Next Sched. - Activity', 'Next Sched. - Date']:
+                             if key_col in visible_priority_jobs_df.columns:
+                                export_cols.append(key_col)
+                        
+                        # 'Job Status' might have been removed by user, or might not be in priority_df
+                        # Check existence before adding
+                        if 'Job Status' in visible_priority_jobs_df.columns:
+                            export_cols.append('Job Status')
+
 
                         true_flag_cols_in_visible = [col for col in visible_priority_jobs_df.columns if col.startswith('Flag_') and \
                                           col not in ['Flag_Any_Threshold_Delay', 'Flag_Any_Keyword_Issue', 
@@ -556,6 +561,7 @@ if st.session_state.df_analyzed is not None and not st.session_state.df_analyzed
                                                       'Primary Issue', 'Days Behind'] and \
                                           visible_priority_jobs_df[col].any()]
                         export_cols.extend(sorted(true_flag_cols_in_visible))
+                        # Ensure all columns in export_cols actually exist in the dataframe before selection
                         export_cols = [col for col in export_cols if col in visible_priority_jobs_df.columns] 
                         
                         export_df_final = visible_priority_jobs_df[export_cols].copy()
@@ -582,8 +588,21 @@ if st.session_state.df_analyzed is not None and not st.session_state.df_analyzed
         if 'Flag_Awaiting_Cutlist' in df_full_for_counts.columns: st.metric("Awaiting Cutlist (>3 days, non-laminate)", df_full_for_counts['Flag_Awaiting_Cutlist'].sum())
         
         st.subheader("Keyword Issues in Notes")
-        notes_cols_for_keyword_summary = ['Next Sched. - Notes', 'Template - Notes', 'Install - Notes', 'Saw - Notes', 'Job Issues', 'QC - Notes']
-        for note_col_original_name in notes_cols_for_keyword_summary:
+        # Update this list to match notes_columns_to_scan in flag_keyword_issues
+        notes_cols_for_keyword_summary = ['Next Sched. - Notes', 'Template - Notes', 'Install - Notes', 
+                             'Saw - Notes', 'Job Issues', 'QC - Notes', 'Ready to Fab - Notes',
+                             'Rework - Notes', 'Cutlist - Notes', 'Program - Notes', 
+                             'Material Pull - Notes', 'CNC - Notes', 'Polish/Fab Completion - Notes',
+                             'Hone Splash - Notes', 'Ship - Notes', 'Product Rcvd - Notes',
+                             'Repair - Notes', 'Delivery - Notes', 'Pick Up - Notes', 
+                             'Service - Notes', 'Callback - Notes', 'Invoice - Notes', 
+                             'Build Up - Notes', 'Tearout - Notes', 'Lift Help - Notes',
+                             'Courier - Notes', 'Tile Order - Notes', 'Tile Install - Notes',
+                             'Collect Final - Notes', 'Follow Up Call - Notes', 'Address Notes'
+                             ]
+        actual_notes_cols_for_summary = [col for col in notes_cols_for_keyword_summary if col in df_full_for_counts.columns]
+
+        for note_col_original_name in actual_notes_cols_for_summary:
             flag_col_name = f'Flag_Keyword_In_{note_col_original_name.replace(" - ", "_").replace(" ", "_").replace(".","_")}'
             if flag_col_name in df_full_for_counts.columns:
                 st.write(f"*Keyword in '{note_col_original_name}'*: {df_full_for_counts[flag_col_name].sum()} jobs")

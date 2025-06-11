@@ -23,13 +23,17 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- Constants ---
+# --- Constants (Revised based on our discussion) ---
 MINIMUM_SQ_FT             = 35
 MARKUP_FACTOR             = 1.4
 INSTALL_COST_PER_SQFT     = 21
 FABRICATION_COST_PER_SQFT = 17
-ADDITIONAL_IB_RATE        = 0.05
 GST_RATE                  = 0.05
+# ADDED: New adjustable constant for waste factor
+WASTE_FACTOR              = 1.05
+# ADDED: New adjustable constant for internal material markup
+IB_MATERIAL_MARKUP        = 1.05
+# REMOVED: ADDITIONAL_IB_RATE is no longer used
 
 # ————————————————————————————————————————————————————————————
 # Use your published‐to‐CSV PIO sheet URL here:
@@ -60,13 +64,16 @@ def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-# --- Cost‐calculation helper ---
+# --- Cost‐calculation helper (Revised) ---
 def calculate_cost(rec: dict, sq: float) -> dict:
     uc  = rec.get("unit_cost", 0) or 0
     mat = uc * MARKUP_FACTOR * sq
     fab = FABRICATION_COST_PER_SQFT * sq
     ins = INSTALL_COST_PER_SQFT * sq
-    ib  = (uc + FABRICATION_COST_PER_SQFT + ADDITIONAL_IB_RATE) * sq
+    
+    # MODIFIED: IB calculation updated to use IB_MATERIAL_MARKUP and remove ADDITIONAL_IB_RATE
+    ib  = ((uc * IB_MATERIAL_MARKUP) + FABRICATION_COST_PER_SQFT) * sq
+    
     return {
         "base_material_and_fab_component": mat + fab,
         "base_install_cost_component":     ins,
@@ -315,7 +322,8 @@ df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
     serial_numbers  = ("Serial Number", lambda x: ", ".join(sorted(x.astype(str).unique())))
 ).reset_index()
 
-required = sq_ft_used * 1.1
+# MODIFIED: Calculation now uses the WASTE_FACTOR constant
+required = sq_ft_used * WASTE_FACTOR
 df_agg = df_agg[df_agg["available_sq_ft"] >= required]
 df_agg["price"] = df_agg.apply(
     lambda r: calculate_cost(r, sq_ft_used)["total_customer_facing_base_cost"],
@@ -323,7 +331,7 @@ df_agg["price"] = df_agg.apply(
 )
 
 if df_agg.empty:
-    st.error("❌ No slabs have enough material (including 10% buffer).")
+    st.error(f"❌ No slabs have enough material (including {((WASTE_FACTOR * 100) - 100):.0f}% buffer).")
     st.stop()
 
 # ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
@@ -401,3 +409,4 @@ if selected:
         )
         subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"
         send_email(subject, body, selected_email)
+

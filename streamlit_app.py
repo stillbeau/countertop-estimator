@@ -108,8 +108,12 @@ def compose_breakdown_email_body(
             # You will need to add TRANSFER_REQUEST_EMAIL to your Streamlit secrets
             to_email = st.secrets["TRANSFER_REQUEST_EMAIL"]
             subject = f"Slab Transfer Request - Job: {job}"
+            # MODIFIED: Added PO and JOB LINK fields to the email body
             body = f"""
 Please initiate a transfer for the following slab(s):
+
+PO: 
+JOB LINK: 
 
 Job Name: {job}
 Material: {rec.get("Full Name", "N/A")}
@@ -448,4 +452,3 @@ if selected:
         )
         subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"
         send_email(subject, body, selected_email)
-

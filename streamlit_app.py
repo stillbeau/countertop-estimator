@@ -26,7 +26,7 @@ st.markdown(
 
 # --- Constants ---
 MINIMUM_SQ_FT             = 35
-MARKUP_FACTOR             = 1.4
+MARKUP_FACTOR             = 1.51
 INSTALL_COST_PER_SQFT     = 21
 FABRICATION_COST_PER_SQFT = 17
 GST_RATE                  = 0.05

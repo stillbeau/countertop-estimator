@@ -10,16 +10,28 @@ from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
 
 # --- Page config & CSS ---
-st.set_page_config(page_title="CounterPro", layout="centered")
+st.set_page_config(page_title="CounterPro", page_icon="🛠️", layout="centered")
 st.markdown(
     """
     <style>
+    /* iOS-inspired system font stack */
+    body, .stApp {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+        background-color: #F2F2F7;
+    }
     /* Smaller font for selectboxes/labels */
     div[data-baseweb="select"] { font-size: 0.8rem; }
     .stLabel, label { font-size: 0.8rem; }
     /* Slightly larger headings */
     h1 { font-size: 2rem; }
     h2 { font-size: 1.5rem; }
+    /* Rounded blue buttons */
+    .stButton>button {
+        background-color: #0A84FF;
+        color: white;
+        border-radius: 8px;
+        border: none;
+    }
     </style>
     """,
     unsafe_allow_html=True,

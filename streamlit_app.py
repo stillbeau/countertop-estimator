@@ -424,6 +424,7 @@ if span <= 0:
 else:
     step = 100 if span >= 100 else max(1, span)
     budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
+    # Show the full price span so users know the expected range
     st.caption(f"Estimated job cost range: ${min_price:,.0f}–${max_price:,.0f}")
 
 df_agg = df_agg[df_agg["price"] <= budget]

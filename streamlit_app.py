@@ -412,25 +412,16 @@ if df_agg.empty:
     st.error(f"❌ No slabs have enough material (including {((WASTE_FACTOR * 100) - 100):.0f}% buffer).")
     st.stop()
 
-# ── 10) Budget slider ───────────────────────────────────────────────────────────
+# ── 10) Estimated job cost ─────────────────────────────────────────────────────
 min_price = df_agg["price"].min()
 max_price = df_agg["price"].max()
-mi = math.floor(min_price)
-ma = math.ceil(max_price)
-span = ma - mi
-if span <= 0:
-    budget = ma
-    st.info(f"Estimated job cost: ${ma:,.0f}")
-else:
-    step = 100 if span >= 100 else max(1, span)
-    budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
-    # Show the full price span so users know the expected range
-    st.caption(f"Estimated job cost range: ${min_price:,.0f}–${max_price:,.0f}")
 
-df_agg = df_agg[df_agg["price"] <= budget]
-if df_agg.empty:
-    st.error("❌ No materials fall within that budget.")
-    st.stop()
+if math.isclose(min_price, max_price):
+    st.info(f"Estimated job cost: ${max_price:,.0f}")
+else:
+    st.info(
+        f"Estimated job cost range: ${min_price:,.0f}–${max_price:,.0f}"
+    )
 
 # ── 11) “Choose a material” dropdown (showing final $/sq ft) ────────────────────
 records = df_agg.to_dict("records")

@@ -4,6 +4,7 @@ import gspread
 import json
 import smtplib
 import pytz
+import math
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
@@ -399,11 +400,19 @@ if df_agg.empty:
     st.error(f"❌ No slabs have enough material (including {((WASTE_FACTOR * 100) - 100):.0f}% buffer).")
     st.stop()
 
-# ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
-mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
-span = ma - mi
-step = 100 if span >= 100 else (span if span > 0 else 1)
-budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
+# ── 10) Budget slider ───────────────────────────────────────────────────────────
+min_price = df_agg["price"].min()
+max_price = df_agg["price"].max()
+span = max_price - min_price
+if span <= 0:
+    budget = max_price
+    st.info(f"Estimated job cost: ${max_price:,.0f}")
+else:
+    mi = math.floor(min_price)
+    ma = math.ceil(max_price)
+    step = 100 if (ma - mi) >= 100 else max(1, ma - mi)
+    budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
+    st.caption(f"Estimated job cost range: ${min_price:,.0f}–${max_price:,.0f}")
 
 df_agg = df_agg[df_agg["price"] <= budget]
 if df_agg.empty:

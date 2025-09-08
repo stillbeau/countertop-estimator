@@ -402,8 +402,12 @@ if df_agg.empty:
 # ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
 mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
 span = ma - mi
-step = 100 if span >= 100 else (span if span > 0 else 1)
-budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
+if span <= 0:
+    budget = ma
+    st.info(f"Estimated job cost: ${ma:,.0f}")
+else:
+    step = 100 if span >= 100 else max(1, span)
+    budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
 
 df_agg = df_agg[df_agg["price"] <= budget]
 if df_agg.empty:

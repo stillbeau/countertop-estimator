@@ -415,14 +415,14 @@ if df_agg.empty:
 # ── 10) Budget slider ───────────────────────────────────────────────────────────
 min_price = df_agg["price"].min()
 max_price = df_agg["price"].max()
-span = max_price - min_price
+mi = math.floor(min_price)
+ma = math.ceil(max_price)
+span = ma - mi
 if span <= 0:
-    budget = max_price
-    st.info(f"Estimated job cost: ${max_price:,.0f}")
+    budget = ma
+    st.info(f"Estimated job cost: ${ma:,.0f}")
 else:
-    mi = math.floor(min_price)
-    ma = math.ceil(max_price)
-    step = 100 if (ma - mi) >= 100 else max(1, ma - mi)
+    step = 100 if span >= 100 else max(1, span)
     budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
     st.caption(f"Estimated job cost range: ${min_price:,.0f}–${max_price:,.0f}")
 

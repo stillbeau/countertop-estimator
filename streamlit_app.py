@@ -4,7 +4,6 @@ import gspread
 import json
 import smtplib
 import pytz
-import math
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
@@ -415,12 +414,14 @@ if df_agg.empty:
 # ── 10) Estimated job cost ─────────────────────────────────────────────────────
 min_price = df_agg["price"].min()
 max_price = df_agg["price"].max()
+min_display = round(min_price)
+max_display = round(max_price)
 
-if math.isclose(min_price, max_price):
-    st.info(f"Estimated job cost: ${max_price:,.0f}")
+if min_display == max_display:
+    st.info(f"Estimated job cost: ${max_display:,.0f}")
 else:
     st.info(
-        f"Estimated job cost range: ${min_price:,.0f}–${max_price:,.0f}"
+        f"Estimated job cost range: ${min_display:,.0f}–${max_display:,.0f}"
     )
 
 # ── 11) “Choose a material” dropdown (showing final $/sq ft) ────────────────────

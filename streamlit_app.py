@@ -6,7 +6,7 @@ import smtplib
 import pytz
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from urllib.parse import quote
+from urllib.parse import quote # ADDED: For encoding email details
 
 # --- Page config & CSS ---
 st.set_page_config(page_title="CounterPro", layout="centered")
@@ -25,29 +25,13 @@ st.markdown(
 )
 
 # --- Constants ---
-MINIMUM_SQ_FT = 35
-MARKUP_FACTOR = 1.51
-INSTALL_COST_PER_SQFT = 21
+MINIMUM_SQ_FT             = 35
+MARKUP_FACTOR             = 1.51
+INSTALL_COST_PER_SQFT     = 21
 FABRICATION_COST_PER_SQFT = 17
-WASTE_FACTOR = 1.05
-IB_MATERIAL_MARKUP = 1.05
-
-# --- NEW: Tax Rate Configuration by Branch ---
-# Based on research for installed countertops (real property improvements)
-# BC/AB/MB: Contractor pays PST/RST on materials, charges only GST to customer.
-# SK: Contractor charges both GST and PST to customer on the full contract price.
-BRANCH_TAX_RATES = {
-    "Vernon":    {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
-    "Victoria":  {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
-    "Vancouver": {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
-    "Calgary":   {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
-    "Edmonton":  {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
-    "Saskatoon": {"gst": 0.05, "pst": 0.06, "pst_name": "PST"},
-    "Winnipeg":  {"gst": 0.05, "pst": 0.00, "pst_name": "RST"}, # In MB, it's RST, but same rule as BC
-    # Default fallback
-    "default":   {"gst": 0.05, "pst": 0.00, "pst_name": "PST"}
-}
-
+GST_RATE                  = 0.05
+WASTE_FACTOR              = 1.05
+IB_MATERIAL_MARKUP        = 1.05
 
 # ————————————————————————————————————————————————————————————
 # Use your published‐to‐CSV PIO sheet URL here:
@@ -58,8 +42,8 @@ INVENTORY_CSV_URL = (
 )
 
 # We still load “Salespeople” from Google Sheets via gspread:
-SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
-SALESPEOPLE_TAB = "Salespeople"
+SPREADSHEET_ID   = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
+SALESPEOPLE_TAB  = "Salespeople"
 # ————————————————————————————————————————————————————————————
 
 # --- Load Salespeople sheet via gspread ---
@@ -80,12 +64,12 @@ def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
 
 # --- Cost‐calculation helper ---
 def calculate_cost(rec: dict, sq: float) -> dict:
-    uc = rec.get("unit_cost", 0) or 0
+    uc  = rec.get("unit_cost", 0) or 0
     mat = uc * MARKUP_FACTOR * sq
     fab = FABRICATION_COST_PER_SQFT * sq
     ins = INSTALL_COST_PER_SQFT * sq
     
-    ib = ((uc * IB_MATERIAL_MARKUP) + FABRICATION_COST_PER_SQFT) * sq
+    ib  = ((uc * IB_MATERIAL_MARKUP) + FABRICATION_COST_PER_SQFT) * sq
     
     return {
         "base_material_and_fab_component": mat + fab,
@@ -95,7 +79,7 @@ def calculate_cost(rec: dict, sq: float) -> dict:
     }
 
 
-# --- Compose HTML email body (Revised for provincial taxes) ---
+# --- Compose HTML email body (Revised to include transfer button) ---
 def compose_breakdown_email_body(
     job_name: str,
     selected_branch: str,
@@ -107,21 +91,24 @@ def compose_breakdown_email_body(
     sq_ft_used: float,
     additional_costs: float,
     subtotal: float,
-    tax_info: dict, # NEW: Pass a dict with all tax details
+    gst_amount: float,
     final_total: float
 ) -> str:
     def fmt(v):
         return f"${v:,.2f}"
-    tz = pytz.timezone("America/Vancouver")
+    tz  = pytz.timezone("America/Vancouver")
     now = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
     job = job_name or "Unnamed Job"
 
-    # Create the transfer request button logic
+    # ADDED: Logic to create the transfer request button
     transfer_button_html = ""
+    # Only show the button if the material source and fab plant are different
     if rec.get("Location") != fab_plant:
         try:
+            # You will need to add TRANSFER_REQUEST_EMAIL to your Streamlit secrets
             to_email = st.secrets["TRANSFER_REQUEST_EMAIL"]
             subject = f"Slab Transfer Request - Job: {job}"
+            # MODIFIED: Added PO and JOB LINK fields to the email body
             body = f"""
 Please initiate a transfer for the following slab(s):
 
@@ -138,7 +125,10 @@ TO (Fabrication Plant): {fab_plant}
 Thank you,
 {selected_salesperson}
             """
+            # URL-encode the subject and body for the mailto link
             mailto_link = f"mailto:{to_email}?subject={quote(subject)}&body={quote(body)}"
+
+            # HTML for the button
             transfer_button_html = f"""
 <p style="text-align: center; margin-top: 25px;">
   <a href="{mailto_link}" target="_blank" style="background-color: #2563eb; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-size: 16px;">
@@ -150,19 +140,9 @@ Thank you,
 </p>
             """
         except KeyError:
+            # Handle case where secret is missing
             transfer_button_html = "<p style='color: red; text-align: center;'>Could not create transfer button: 'TRANSFER_REQUEST_EMAIL' secret is missing.</p>"
 
-    # NEW: Conditionally build the PST/RST row for the email
-    pst_row_html = ""
-    if tax_info.get("pst_amount", 0) > 0:
-        pst_name = tax_info.get("pst_name", "PST")
-        pst_rate_pct = tax_info.get("pst_rate", 0) * 100
-        pst_row_html = f"""
-        <tr>
-            <td>{pst_name} ({pst_rate_pct:.0f}%):</td>
-            <td>{fmt(tax_info["pst_amount"])}</td>
-        </tr>
-        """
 
     return f"""<html>
 <head><style>
@@ -213,13 +193,11 @@ Thank you,
       <tr><td>Base Estimate:</td><td>{fmt(costs["total_customer_facing_base_cost"])}</td></tr>
       <tr><td>Additional Costs (sinks, tile, plumbing):</td><td>{fmt(additional_costs)}</td></tr>
       <tr><td>Subtotal:</td><td>{fmt(subtotal)}</td></tr>
-      <tr><td>GST ({tax_info.get("gst_rate", 0) * 100:.0f}%):</td><td>{fmt(tax_info.get("gst_amount", 0))}</td></tr>
-      <!-- PST row is injected here if applicable -->
-      {pst_row_html}
+      <tr><td>GST (5%):</td><td>{fmt(gst_amount)}</td></tr>
       <tr class="grand-total-row"><td>Final Total:</td><td>{fmt(final_total)}</td></tr>
     </table>
 
-    <!-- The transfer button HTML will be injected here if needed -->
+    <!-- ADDED: The transfer button HTML will be injected here if needed -->
     {transfer_button_html}
 
     <div class="footer">Generated by CounterPro on {now}</div>
@@ -233,8 +211,8 @@ def send_email(subject: str, body: str, to_email: str):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"] = st.secrets["SENDER_FROM_EMAIL"]
-        msg["To"] = to_email
+        msg["From"]    = st.secrets["SENDER_FROM_EMAIL"]
+        msg["To"]      = to_email
         msg.attach(MIMEText(body, "html"))
 
         recipients = [to_email]
@@ -378,7 +356,7 @@ df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
 
 # ── 8) Square footage input ────────────────────────────────────────────────────
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
-sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
+sq_ft_used  = max(sq_ft_input, MINIMUM_SQ_FT)
 
 # ── 9) Group, filter, and price ────────────────────────────────────────────────
 df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
@@ -402,12 +380,8 @@ if df_agg.empty:
 # ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
 mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
 span = ma - mi
-if span <= 0:
-    budget = ma
-    st.info(f"Estimated job cost: ${ma:,.0f}")
-else:
-    step = 100 if span >= 100 else max(1, span)
-    budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
+step = 100 if span >= 100 else (span if span > 0 else 1)
+budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
 
 df_agg = df_agg[df_agg["price"] <= budget]
 if df_agg.empty:
@@ -435,37 +409,24 @@ if selected:
 
     st.markdown("---")
 
-    job_name = st.text_input("Job Name (optional)")
+    job_name         = st.text_input("Job Name (optional)")
     additional_costs = st.number_input(
         "Additional Costs – sinks, tile, plumbing",
         value=0.0, min_value=0.0, step=10.0, format="%.2f"
     )
 
-    # --- NEW: Dynamic Tax Calculation ---
-    tax_rates = BRANCH_TAX_RATES.get(selected_branch, BRANCH_TAX_RATES["default"])
-    gst_rate = tax_rates["gst"]
-    pst_rate = tax_rates["pst"]
-    pst_name = tax_rates["pst_name"]
+    subtotal   = costs["total_customer_facing_base_cost"] + additional_costs
+    gst_amount = subtotal * GST_RATE
+    final_total = subtotal + gst_amount
 
-    subtotal = costs["total_customer_facing_base_cost"] + additional_costs
-    gst_amount = subtotal * gst_rate
-    pst_amount = subtotal * pst_rate # Will be 0 if pst_rate is 0
-    final_total = subtotal + gst_amount + pst_amount
-
-    # --- UPDATED: Display logic for taxes ---
     st.markdown(
         f"**Subtotal:** <span style='color:green'>${subtotal:,.2f}</span>", 
         unsafe_allow_html=True
     )
     st.markdown(
-        f"**GST ({gst_rate*100:.0f}%):** <span style='color:green'>${gst_amount:,.2f}</span>",
+        f"**GST (5%):** <span style='color:green'>${gst_amount:,.2f}</span>",
         unsafe_allow_html=True
     )
-    if pst_amount > 0:
-        st.markdown(
-            f"**{pst_name} ({pst_rate*100:.0f}%):** <span style='color:green'>${pst_amount:,.2f}</span>",
-            unsafe_allow_html=True
-        )
     st.markdown(
         f"### <span style='color:green'>Final Total: ${final_total:,.2f}</span>",
         unsafe_allow_html=True
@@ -475,15 +436,6 @@ if selected:
         st.info("Note: This selection uses multiple slabs; color/pattern may vary slightly.")
 
     if selected_email and st.button("📧 Email Quote"):
-        # NEW: Package tax info for the email function
-        tax_info_for_email = {
-            "gst_rate": gst_rate,
-            "gst_amount": gst_amount,
-            "pst_rate": pst_rate,
-            "pst_amount": pst_amount,
-            "pst_name": pst_name,
-        }
-        
         body = compose_breakdown_email_body(
             job_name,
             selected_branch,
@@ -495,7 +447,7 @@ if selected:
             sq_ft_used,
             additional_costs,
             subtotal,
-            tax_info_for_email, # Pass the new tax dict
+            gst_amount,
             final_total
         )
         subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"

@@ -6,53 +6,19 @@ import smtplib
 import pytz
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from urllib.parse import quote # ADDED: For encoding email details
+from urllib.parse import quote  # ADDED: For encoding email details
+from src.theme import THEMES
 
 # --- Page config & CSS ---
 st.set_page_config(page_title="CounterPro", layout="centered")
 
 # iOS‑style visual tweaks -------------------------------------------------------
-st.markdown(
-    """
-    <style>
-    html, body, [class*="css"]  {
-        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
-        background-color: #1c1c1e;
-        color: #f2f2f7;
-    }
+if "theme" not in st.session_state:
+    st.session_state["theme"] = "Dark"
 
-    /* Input controls */
-    div[data-baseweb="select"] > div,
-    input[type="number"] {
-        background-color: #2c2c2e;
-        border: 1px solid #3a3a3c;
-        border-radius: 12px;
-        color: #f2f2f7;
-    }
+st.markdown(THEMES[st.session_state["theme"]], unsafe_allow_html=True)
 
-    /* Buttons */
-    .stButton>button {
-        background-color: #0a84ff;
-        color: white;
-        border: none;
-        border-radius: 12px;
-        padding: 8px 16px;
-        font-size: 0.9rem;
-    }
-
-    /* Slider accent */
-    div[data-baseweb="slider"] [role="slider"] {
-        background-color: #0a84ff;
-    }
-
-    /* Smaller label fonts */
-    .stLabel, label { font-size: 0.85rem; }
-    h1 { font-size: 2rem; }
-    h2 { font-size: 1.5rem; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.sidebar.radio("Theme", list(THEMES.keys()), key="theme")
 
 # --- Constants ---
 MINIMUM_SQ_FT             = 35

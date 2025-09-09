@@ -1,12 +1,8 @@
 import streamlit as st
 import pandas as pd
-import gspread
-import json
-import smtplib
-import pytz
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from urllib.parse import quote # ADDED: For encoding email details
+from src.data import load_salespeople_sheet, load_inventory_csv, get_fab_plant
+from src.costs import calculate_cost
+from src.email import compose_breakdown_email_body, send_email
 
 # --- Page config & CSS ---
 st.set_page_config(page_title="CounterPro", layout="centered")
@@ -56,12 +52,8 @@ st.markdown(
 
 # --- Constants ---
 MINIMUM_SQ_FT             = 35
-MARKUP_FACTOR             = 1.51
-INSTALL_COST_PER_SQFT     = 21
-FABRICATION_COST_PER_SQFT = 17
 GST_RATE                  = 0.05
 WASTE_FACTOR              = 1.05
-IB_MATERIAL_MARKUP        = 1.05
 
 # ————————————————————————————————————————————————————————————
 # Use your published‐to‐CSV PIO sheet URL here:
@@ -76,207 +68,11 @@ SPREADSHEET_ID   = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 SALESPEOPLE_TAB  = "Salespeople"
 # ————————————————————————————————————————————————————————————
 
-# --- Load Salespeople sheet via gspread ---
-@st.cache_data(show_spinner=False)
-def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
-    try:
-        raw = st.secrets["gcp_service_account"]
-        creds = json.loads(raw) if isinstance(raw, str) else raw
-        gc = gspread.service_account_from_dict(creds)
-        ws = gc.open_by_key(SPREADSHEET_ID).worksheet(tab_name)
-        df = pd.DataFrame(ws.get_all_records())
-        df.columns = df.columns.str.strip()
-        return df
-    except Exception as e:
-        st.error(f"❌ Could not load Google Sheet tab '{tab_name}': {e}")
-        return pd.DataFrame()
-
-
-# --- Cost‐calculation helper ---
-def calculate_cost(rec: dict, sq: float) -> dict:
-    uc  = rec.get("unit_cost", 0) or 0
-    mat = uc * MARKUP_FACTOR * sq
-    fab = FABRICATION_COST_PER_SQFT * sq
-    ins = INSTALL_COST_PER_SQFT * sq
-    
-    ib  = ((uc * IB_MATERIAL_MARKUP) + FABRICATION_COST_PER_SQFT) * sq
-    
-    return {
-        "base_material_and_fab_component": mat + fab,
-        "base_install_cost_component":     ins,
-        "ib_cost_component":               ib,
-        "total_customer_facing_base_cost": mat + fab + ins
-    }
-
-
-# --- Compose HTML email body (Revised to include transfer button) ---
-def compose_breakdown_email_body(
-    job_name: str,
-    selected_branch: str,
-    selected_salesperson: str,
-    rec: dict,
-    costs: dict,
-    fab_plant: str,
-    selected_thickness: str,
-    sq_ft_used: float,
-    additional_costs: float,
-    subtotal: float,
-    gst_amount: float,
-    final_total: float
-) -> str:
-    def fmt(v):
-        return f"${v:,.2f}"
-    tz  = pytz.timezone("America/Vancouver")
-    now = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
-    job = job_name or "Unnamed Job"
-
-    # ADDED: Logic to create the transfer request button
-    transfer_button_html = ""
-    # Only show the button if the material source and fab plant are different
-    if rec.get("Location") != fab_plant:
-        try:
-            # You will need to add TRANSFER_REQUEST_EMAIL to your Streamlit secrets
-            to_email = st.secrets["TRANSFER_REQUEST_EMAIL"]
-            subject = f"Slab Transfer Request - Job: {job}"
-            # MODIFIED: Added PO and JOB LINK fields to the email body
-            body = f"""
-Please initiate a transfer for the following slab(s):
-
-PO: 
-JOB LINK: 
-
-Job Name: {job}
-Material: {rec.get("Full Name", "N/A")}
-Serial Number(s): {rec.get("serial_numbers", "N/A")}
-
-FROM (Current Location): {rec.get("Location", "N/A")}
-TO (Fabrication Plant): {fab_plant}
-
-Thank you,
-{selected_salesperson}
-            """
-            # URL-encode the subject and body for the mailto link
-            mailto_link = f"mailto:{to_email}?subject={quote(subject)}&body={quote(body)}"
-
-            # HTML for the button
-            transfer_button_html = f"""
-<p style="text-align: center; margin-top: 25px;">
-  <a href="{mailto_link}" target="_blank" style="background-color: #2563eb; color: white; padding: 12px 20px; text-decoration: none; border-radius: 5px; font-size: 16px;">
-    Request Slab Transfer
-  </a>
-</p>
-<p style="text-align: center; font-size: 12px; color: #666;">
-  (Material is at a different location from the fabrication plant)
-</p>
-            """
-        except KeyError:
-            # Handle case where secret is missing
-            transfer_button_html = "<p style='color: red; text-align: center;'>Could not create transfer button: 'TRANSFER_REQUEST_EMAIL' secret is missing.</p>"
-
-
-    return f"""<html>
-<head><style>
-  body {{ font-family: Arial, sans-serif; color: #333; }}
-  .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-  h1 {{ color: #0056b3; margin-bottom: 4px; }}
-  p.meta {{ margin: 0; font-size: 0.9rem; color: #555; }}
-  h2 {{ color: #0056b3; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 20px; }}
-  table {{ width: 100%; border-collapse: collapse; margin: 10px 0; }}
-  th, td {{ padding: 8px; text-align: left; border-bottom: 1px solid #ddd; }}
-  th {{ background: #f0f0f0; }}
-  .grand-total-row td {{ font-weight: bold; background: #c9e0ff; font-size: 1rem; }}
-  .footer {{ font-size: 10px; color: #666; text-align: center; margin-top: 20px; }}
-</style></head>
-<body>
-  <div class="container">
-    <h1>CounterPro Estimate</h1>
-    <p class="meta">
-      <strong>Branch:</strong> {selected_branch} &nbsp;&nbsp;
-      <strong>Salesperson:</strong> {selected_salesperson}
-    </p>
-
-    <h2>Project &amp; Material Overview</h2>
-    <table>
-      <tr><th>Detail</th><th>Value</th></tr>
-      <tr><td>Job Name:</td><td>{job}</td></tr>
-      <tr><td>Slab Selected:</td><td>{rec.get("Full Name", "N/A")}</td></tr>
-      <tr><td>Material Source:</td><td>{rec.get("Location", "N/A")}</td></tr>
-      <tr><td>Fabrication Plant:</td><td>{fab_plant}</td></tr>
-      <tr><td>Thickness:</td><td>{selected_thickness}</td></tr>
-      <tr><td>Sq Ft (for pricing):</td><td>{sq_ft_used} sq.ft</td></tr>
-      <tr><td>Slab Sq Ft (Total):</td><td>{rec.get("available_sq_ft", 0):.2f} sq.ft</td></tr>
-      <tr><td>Unique Slabs:</td><td>{rec.get("slab_count", 0)}</td></tr>
-      <tr><td>Serial Numbers:</td><td>{rec.get("serial_numbers", "N/A")}</td></tr>
-    </table>
-
-    <h2>Cost Components</h2>
-    <table>
-      <tr><th>Component</th><th>Amount</th></tr>
-      <tr><td>Material &amp; Fabrication:</td><td>{fmt(costs["base_material_and_fab_component"])}</td></tr>
-      <tr><td>Installation:</td><td>{fmt(costs["base_install_cost_component"])}</td></tr>
-      <tr><td>IB Cost (Internal):</td><td>{fmt(costs["ib_cost_component"])}</td></tr>
-    </table>
-
-    <h2>Totals</h2>
-    <table>
-      <tr><th>Description</th><th>Amount</th></tr>
-      <tr><td>Base Estimate:</td><td>{fmt(costs["total_customer_facing_base_cost"])}</td></tr>
-      <tr><td>Additional Costs (sinks, tile, plumbing):</td><td>{fmt(additional_costs)}</td></tr>
-      <tr><td>Subtotal:</td><td>{fmt(subtotal)}</td></tr>
-      <tr><td>GST (5%):</td><td>{fmt(gst_amount)}</td></tr>
-      <tr class="grand-total-row"><td>Final Total:</td><td>{fmt(final_total)}</td></tr>
-    </table>
-
-    <!-- ADDED: The transfer button HTML will be injected here if needed -->
-    {transfer_button_html}
-
-    <div class="footer">Generated by CounterPro on {now}</div>
-  </div>
-</body>
-</html>"""
-
-
-# --- Send email helper ---
-def send_email(subject: str, body: str, to_email: str):
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = st.secrets["SENDER_FROM_EMAIL"]
-        msg["To"]      = to_email
-        msg.attach(MIMEText(body, "html"))
-
-        recipients = [to_email]
-        cc = st.secrets.get("QUOTE_TRACKING_CC_EMAIL")
-        if cc:
-            msg["Cc"] = cc
-            recipients.append(cc)
-
-        with smtplib.SMTP(
-            st.secrets["SMTP_SERVER"],
-            st.secrets["SMTP_PORT"]
-        ) as server:
-            server.starttls()
-            server.login(
-                st.secrets["EMAIL_USER"],
-                st.secrets["EMAIL_PASSWORD"]
-            )
-            server.sendmail(msg["From"], recipients, msg.as_string())
-
-        st.success("✅ Quote emailed successfully.")
-    except Exception as e:
-        st.error(f"Email failed: {e}")
-
-
-def get_fab_plant(branch: str) -> str:
-    """If branch is one of (Vernon, Victoria, Vancouver), return 'Abbotsford'; else 'Saskatoon'."""
-    return "Abbotsford" if branch in ["Vernon", "Victoria", "Vancouver"] else "Saskatoon"
-
-
 # --- MAIN APP UI ---
 st.title("CounterPro")
 
 # ── 1) Branch & Salesperson (side by side) ───────────────────────────────────────
-df_sp = load_salespeople_sheet(SALESPEOPLE_TAB)
+df_sp = load_salespeople_sheet(SPREADSHEET_ID, SALESPEOPLE_TAB)
 selected_email = None
 
 if not df_sp.empty:
@@ -301,17 +97,10 @@ else:
     selected_salesperson = ""
 
 # ── 2) Load Inventory from PIO CSV ──────────────────────────────────────────────
-try:
-    df_inv = pd.read_csv(INVENTORY_CSV_URL)
-    df_inv.columns = df_inv.columns.str.strip()
-except Exception as e:
-    st.error(f"❌ Could not fetch inventory CSV: {e}")
-    st.stop()
-
+df_inv = load_inventory_csv(INVENTORY_CSV_URL)
 if df_inv.empty:
     st.error("❌ Loaded inventory CSV is empty.")
     st.stop()
-
 # ── 3) FILTER BY BRANCH→SOURCE LOCATIONS ────────────────────────────────────────
 branch_to_material_sources = {
     "Vernon":    ["Vernon", "Abbotsford"],

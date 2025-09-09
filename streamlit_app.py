@@ -417,6 +417,7 @@ max_price = df_agg["price"].max()
 min_display = round(min_price)
 max_display = round(max_price)
 
+# Show a single price when all materials cost the same; otherwise show the full range.
 if min_display == max_display:
     st.info(f"Estimated job cost: ${max_display:,.0f}")
 else:

@@ -10,13 +10,43 @@ from urllib.parse import quote # ADDED: For encoding email details
 
 # --- Page config & CSS ---
 st.set_page_config(page_title="CounterPro", layout="centered")
+
+# iOS‑style visual tweaks -------------------------------------------------------
 st.markdown(
     """
     <style>
-    /* Smaller font for selectboxes/labels */
-    div[data-baseweb="select"] { font-size: 0.8rem; }
-    .stLabel, label { font-size: 0.8rem; }
-    /* Slightly larger headings */
+    html, body, [class*="css"]  {
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
+        background-color: #1c1c1e;
+        color: #f2f2f7;
+    }
+
+    /* Input controls */
+    div[data-baseweb="select"] > div,
+    input[type="number"] {
+        background-color: #2c2c2e;
+        border: 1px solid #3a3a3c;
+        border-radius: 12px;
+        color: #f2f2f7;
+    }
+
+    /* Buttons */
+    .stButton>button {
+        background-color: #0a84ff;
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 8px 16px;
+        font-size: 0.9rem;
+    }
+
+    /* Slider accent */
+    div[data-baseweb="slider"] [role="slider"] {
+        background-color: #0a84ff;
+    }
+
+    /* Smaller label fonts */
+    .stLabel, label { font-size: 0.85rem; }
     h1 { font-size: 2rem; }
     h2 { font-size: 1.5rem; }
     </style>
@@ -345,12 +375,20 @@ df_inv["Color"] = df_inv["Color"].astype(str).str.strip()
 df_inv["Full Name"] = df_inv["Brand"] + " - " + df_inv["Color"]
 
 # ── 7) Thickness selector ──────────────────────────────────────────────────────
-df_inv["Thickness"] = df_inv["Thickness"].astype(str).str.strip().str.lower()
+# Normalize thickness like "3 cm" → "3cm" so we can safely default to 3cm.
+df_inv["Thickness"] = (
+    df_inv["Thickness"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "", regex=False)
+)
 th_list = sorted(df_inv["Thickness"].unique())
 selected_thickness = st.selectbox(
     "Select Thickness",
     th_list,
-    index=th_list.index("3cm") if "3cm" in th_list else 0
+    index=th_list.index("3cm") if "3cm" in th_list else 0,
+    format_func=lambda t: t.replace("cm", " cm")
 )
 df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
 
@@ -378,9 +416,10 @@ if df_agg.empty:
     st.stop()
 
 # ── 10) Defensive slider for “Max Job Cost” ──────────────────────────────────────
-mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
+# Use float values so rounding doesn't drop the highest‑priced option
+mi, ma = float(df_agg["price"].min()), float(df_agg["price"].max())
 span = ma - mi
-step = 100 if span >= 100 else (span if span > 0 else 1)
+step = 100.0 if span >= 100 else (span if span > 0 else 1.0)
 budget = st.slider("Max Job Cost ($)", mi, ma, ma, step=step)
 
 df_agg = df_agg[df_agg["price"] <= budget]

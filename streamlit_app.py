@@ -4,9 +4,12 @@ import gspread
 import json
 import smtplib
 import pytz
+import io
+from typing import Optional
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from urllib.parse import quote # ADDED: For encoding email details
+from email.mime.application import MIMEApplication
+from urllib.parse import quote  # ADDED: For encoding email details
 
 # --- Page config & CSS ---
 st.set_page_config(page_title="CounterPro", layout="centered")
@@ -236,14 +239,43 @@ Thank you,
 </html>"""
 
 
+# --- Generate PDF from HTML ---
+def generate_pdf(html_content: str) -> bytes:
+    """Convert an HTML string to PDF bytes using pdfkit or reportlab."""
+    try:
+        import pdfkit
+        return pdfkit.from_string(html_content, False)
+    except Exception:
+        try:
+            from reportlab.platypus import SimpleDocTemplate, Paragraph
+            from reportlab.lib.styles import getSampleStyleSheet
+            from reportlab.lib.pagesizes import letter
+
+            buffer = io.BytesIO()
+            doc = SimpleDocTemplate(buffer, pagesize=letter)
+            styles = getSampleStyleSheet()
+            story = [Paragraph(html_content, styles["Normal"])]
+            doc.build(story)
+            buffer.seek(0)
+            return buffer.read()
+        except Exception as e:
+            st.error(f"PDF generation failed: {e}")
+            return b""
+
+
 # --- Send email helper ---
-def send_email(subject: str, body: str, to_email: str):
+def send_email(subject: str, body: str, to_email: str, pdf_bytes: Optional[bytes] = None):
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"]    = st.secrets["SENDER_FROM_EMAIL"]
         msg["To"]      = to_email
         msg.attach(MIMEText(body, "html"))
+
+        if pdf_bytes:
+            attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+            attachment.add_header("Content-Disposition", "attachment", filename="quote.pdf")
+            msg.attach(attachment)
 
         recipients = [to_email]
         cc = st.secrets.get("QUOTE_TRACKING_CC_EMAIL")
@@ -471,23 +503,33 @@ if selected:
         unsafe_allow_html=True
     )
 
+    summary_html = compose_breakdown_email_body(
+        job_name,
+        selected_branch,
+        selected_salesperson,
+        selected,
+        costs,
+        get_fab_plant(selected_branch),
+        selected_thickness,
+        sq_ft_used,
+        additional_costs,
+        subtotal,
+        gst_amount,
+        final_total
+    )
+
+    pdf_bytes = generate_pdf(summary_html)
+    if pdf_bytes:
+        st.download_button(
+            "📄 Download Quote PDF",
+            data=pdf_bytes,
+            file_name=f"{job_name or 'quote'}.pdf",
+            mime="application/pdf",
+        )
+
     if selected["slab_count"] > 1:
         st.info("Note: This selection uses multiple slabs; color/pattern may vary slightly.")
 
     if selected_email and st.button("📧 Email Quote"):
-        body = compose_breakdown_email_body(
-            job_name,
-            selected_branch,
-            selected_salesperson,
-            selected,
-            costs,
-            get_fab_plant(selected_branch),
-            selected_thickness,
-            sq_ft_used,
-            additional_costs,
-            subtotal,
-            gst_amount,
-            final_total
-        )
         subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"
-        send_email(subject, body, selected_email)
+        send_email(subject, summary_html, selected_email, pdf_bytes)

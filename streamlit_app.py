@@ -390,7 +390,7 @@ df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
 
 # ── 8) Square footage input ────────────────────────────────────────────────────
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
-sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
+sq_ft_used = sq_ft_input if sq_ft_input > MINIMUM_SQ_FT else MINIMUM_SQ_FT
 
 # ── 9) Group, filter, and price ────────────────────────────────────────────────
 df_agg = df_inv.groupby(["Full Name", "Location"]).agg(
@@ -412,18 +412,9 @@ if df_agg.empty:
     st.stop()
 
 # ── 10) Estimated job cost ─────────────────────────────────────────────────────
-min_price = df_agg["price"].min()
-max_price = df_agg["price"].max()
-min_display = round(min_price)
-max_display = round(max_price)
-
-# Show a single price when all materials cost the same; otherwise show the full range.
-if min_display == max_display:
-    st.info(f"Estimated job cost: ${max_display:,.0f}")
-else:
-    st.info(
-        f"Estimated job cost range: ${min_display:,.0f}–${max_display:,.0f}"
-    )
+average_price = df_agg["price"].mean()
+if pd.notna(average_price):
+    st.info(f"Estimated job cost: ${round(average_price):,.0f}")
 
 # ── 11) “Choose a material” dropdown (showing final $/sq ft) ────────────────────
 records = df_agg.to_dict("records")

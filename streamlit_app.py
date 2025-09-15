@@ -20,24 +20,22 @@ st.markdown(
     /* Slightly larger headings */
     h1 { font-size: 2rem; }
     h2 { font-size: 1.5rem; }
-    /* Make code blocks wrap for any HTML previews */
     pre, code { white-space: pre-wrap !important; }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# --- Constants (kept your defaults; now adjustable in-app under "Advanced") ---
-DEFAULTS = {
-    "MINIMUM_SQ_FT": 35,
-    "MARKUP_FACTOR": 1.51,
-    "INSTALL_COST_PER_SQFT": 21.0,
-    "FABRICATION_COST_PER_SQFT": 17.0,
-    "WASTE_FACTOR": 1.05,
-    "IB_MATERIAL_MARKUP": 1.05,
-}
+# --- Constants ---
+MINIMUM_SQ_FT = 35
+MARKUP_FACTOR = 1.51
+INSTALL_COST_PER_SQFT = 21.0
+FABRICATION_COST_PER_SQFT = 15.0  # CHANGED to $15 as requested
+WASTE_FACTOR = 1.05
+IB_MATERIAL_MARKUP = 1.05
+IB_MIN_MARGIN = 0.18  # NEW: ensure IB is at least 18% gross margin over (slab + fab)
 
-# --- Provincial tax configuration (unchanged logic; made easy to override in-app) ---
+# --- Tax configuration by branch ---
 BRANCH_TAX_RATES = {
     "Vernon":    {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
     "Victoria":  {"gst": 0.05, "pst": 0.00, "pst_name": "PST"},
@@ -50,13 +48,12 @@ BRANCH_TAX_RATES = {
 }
 
 # ————————————————————————————————————————————————————————————
-# Inventory CSV (unchanged) + Salespeople GSheet
+# Inventory CSV + Salespeople GSheet
 INVENTORY_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/"
     "2PACX-1vRzPf_DEc7ojcjqCsk_5O9HtSFWy7aj2Fi_bPjUh6HVaN38coQSINDps0RGrpiM9ox58izhsNkzD51j/"
     "pub?output=csv"
 )
-
 SPREADSHEET_ID = "166G-39R1YSGTjlJLulWGrtE-Reh97_F__EcMlLPa1iQ"
 SALESPEOPLE_TAB = "Salespeople"
 # ————————————————————————————————————————————————————————————
@@ -64,19 +61,19 @@ SALESPEOPLE_TAB = "Salespeople"
 # --- Helpers -------------------------------------------------------------------
 
 def money(x: float | Decimal) -> str:
-    """Format as $1,234.56."""
     try:
         d = Decimal(str(x)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     except Exception:
         d = Decimal("0.00")
     return f"${d:,.2f}"
 
+
 def parse_email_list(s: str | None) -> list[str]:
-    """Allow comma/semicolon separated lists in secrets."""
     if not s:
         return []
     parts = [p.strip() for p in s.replace(";", ",").split(",")]
     return [p for p in parts if p]
+
 
 def safe_get_secret(key: str, required: bool = False, default: str | None = None) -> str | None:
     try:
@@ -89,8 +86,8 @@ def safe_get_secret(key: str, required: bool = False, default: str | None = None
             st.error(f"Error reading secret `{key}`: {e}")
         return default
 
+
 def get_fab_plant(branch: str) -> str:
-    """If branch is one of (Vernon, Victoria, Vancouver), return 'Abbotsford'; else 'Saskatoon'."""
     return "Abbotsford" if branch in ["Vernon", "Victoria", "Vancouver"] else "Saskatoon"
 
 # --- Data loading & normalization ---------------------------------------------
@@ -109,13 +106,14 @@ def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
         st.error(f"❌ Could not load Google Sheet tab '{tab_name}': {e}")
         return pd.DataFrame()
 
+
 @st.cache_data(show_spinner=False)
 def load_inventory_csv(url: str) -> pd.DataFrame:
     return pd.read_csv(url)
 
+
 def normalize_inventory_df(df: pd.DataFrame) -> pd.DataFrame:
-    cols = df.columns.str.strip()
-    df.columns = cols
+    df.columns = df.columns.str.strip()
 
     # Available Sq Ft
     if "Available Qty" in df.columns:
@@ -133,12 +131,12 @@ def normalize_inventory_df(df: pd.DataFrame) -> pd.DataFrame:
     if "Serialized Unit Cost" in df.columns:
         df["unit_cost"] = pd.to_numeric(
             df["Serialized Unit Cost"].astype(str).str.replace(r"[\$,]", "", regex=True),
-            errors="coerce"
+            errors="coerce",
         )
     elif "Serialized On Hand Cost" in df.columns:
         df["SerialOnHandCost"] = pd.to_numeric(
             df["Serialized On Hand Cost"].astype(str).str.replace(r"[\$,]", "", regex=True),
-            errors="coerce"
+            errors="coerce",
         )
         denom = df["Available Sq Ft"].replace(0, pd.NA)
         df["unit_cost"] = df["SerialOnHandCost"] / denom
@@ -151,47 +149,77 @@ def normalize_inventory_df(df: pd.DataFrame) -> pd.DataFrame:
 
     # Basic filtering
     df = df[
-        df["Available Sq Ft"].notna() & (df["Available Sq Ft"] > 0) &
-        df["unit_cost"].notna() & (df["unit_cost"] > 0)
+        df["Available Sq Ft"].notna() & (df["Available Sq Ft"] > 0)
+        & df["unit_cost"].notna() & (df["unit_cost"] > 0)
     ]
 
-    # Full Name, Thickness cleanup
-    for c in ["Brand", "Color"]:
+    # Clean text fields
+    for c in ["Brand", "Color", "Thickness"]:
         if c in df.columns:
             df[c] = df[c].astype(str).str.strip()
         else:
             df[c] = ""
+
     df["Full Name"] = df["Brand"] + " - " + df["Color"]
 
-    if "Thickness" in df.columns:
-        df["Thickness"] = df["Thickness"].astype(str).str.strip().str.lower()
-    else:
-        df["Thickness"] = "3cm"  # fallback if missing
+    # Normalize thickness for robust matching (e.g., "3 cm" => "3cm")
+    df["Thickness_norm"] = df["Thickness"].str.lower().str.replace(" ", "", regex=False)
 
     return df
 
 # --- Pricing -------------------------------------------------------------------
 
-def calculate_cost(rec: dict, sq: float, params: dict) -> dict:
+def calculate_cost(rec: dict, sq: float) -> dict:
     uc = float(rec.get("unit_cost", 0) or 0)
-    mat = uc * params["MARKUP_FACTOR"] * sq
-    fab = params["FABRICATION_COST_PER_SQFT"] * sq
-    ins = params["INSTALL_COST_PER_SQFT"] * sq
-    ib  = ((uc * params["IB_MATERIAL_MARKUP"]) + params["FABRICATION_COST_PER_SQFT"]) * sq
+
+    # Customer-facing build (material markup on unit cost, then add fab + install)
+    mat_component = uc * MARKUP_FACTOR * sq
+    fab_component = FABRICATION_COST_PER_SQFT * sq
+    ins_component = INSTALL_COST_PER_SQFT * sq
+
+    # IB pricing — ensure at least 18% margin on (slab + fabrication rate)
+    base_cost_for_ib_per_sq = uc + FABRICATION_COST_PER_SQFT
+    ib_candidate_margin_per_sq = base_cost_for_ib_per_sq / (1.0 - IB_MIN_MARGIN)
+    ib_candidate_markup_per_sq = (uc * IB_MATERIAL_MARKUP) + FABRICATION_COST_PER_SQFT
+
+    if ib_candidate_margin_per_sq >= ib_candidate_markup_per_sq:
+        ib_per_sq = ib_candidate_margin_per_sq
+        ib_method = "margin_floor"  # 18% floor applied
+    else:
+        ib_per_sq = ib_candidate_markup_per_sq
+        ib_method = "markup_chain"   # legacy markup method
+
+    ib_total = ib_per_sq * sq
+
+    # Margin % is (price - cost) / price
+    ib_margin_pct = 0.0
+    if ib_per_sq > 0:
+        ib_margin_pct = 1.0 - (base_cost_for_ib_per_sq / ib_per_sq)
+
     return {
-        "base_material_and_fab_component": mat + fab,
-        "base_install_cost_component":     ins,
-        "ib_cost_component":               ib,
-        "total_customer_facing_base_cost": mat + fab + ins
+        "base_material_and_fab_component": mat_component + fab_component,
+        "base_install_cost_component":     ins_component,
+        "ib_cost_component":               ib_total,
+        "total_customer_facing_base_cost": mat_component + fab_component + ins_component,
+        # Extras for UI transparency
+        "ib_per_sq": ib_per_sq,
+        "ib_base_cost_per_sq": base_cost_for_ib_per_sq,
+        "ib_margin_pct": ib_margin_pct,
+        "ib_method": ib_method,
     }
+
+
+def compute_taxes(subtotal: float, tax_rates: dict) -> dict:
 
 def compute_taxes(subtotal: float, tax_rates: dict) -> dict:
     gst_rate = float(tax_rates.get("gst", 0.05))
     pst_rate = float(tax_rates.get("pst", 0.00))
     pst_name = tax_rates.get("pst_name", "PST")
+
     gst_amt = Decimal(str(subtotal * gst_rate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     pst_amt = Decimal(str(subtotal * pst_rate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     final   = Decimal(str(subtotal)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) + gst_amt + pst_amt
+
     return {
         "gst_rate": gst_rate,
         "pst_rate": pst_rate,
@@ -200,18 +228,6 @@ def compute_taxes(subtotal: float, tax_rates: dict) -> dict:
         "pst_amount": float(pst_amt),
         "final_total": float(final),
     }
-
-def round_total(v: float, mode: str) -> float:
-    """Optional customer-friendly rounding."""
-    if mode == "None":
-        return float(Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-    if mode == "Nearest $1":
-        return round(v / 1.0) * 1.0
-    if mode == "Nearest $5":
-        return round(v / 5.0) * 5.0
-    if mode == "Nearest $10":
-        return round(v / 10.0) * 10.0
-    return v
 
 # --- Email & HTML --------------------------------------------------------------
 
@@ -233,7 +249,7 @@ def compose_breakdown_email_body(
     now = pd.Timestamp.now(tz=tz).strftime("%Y-%m-%d %H:%M:%S %Z")
     job = job_name or "Unnamed Job"
 
-    # Transfer request button (same behavior; safer handling of multiple recipients)
+    # Transfer request button (supports multiple recipients)
     transfer_button_html = ""
     try:
         to_emails = parse_email_list(st.secrets.get("TRANSFER_REQUEST_EMAIL"))
@@ -270,7 +286,6 @@ Thank you,
     except Exception:
         transfer_button_html = "<p style='color: red; text-align: center;'>Could not create transfer button.</p>"
 
-    # PST/RST row
     pst_row_html = ""
     if tax_info.get("pst_amount", 0) > 0:
         pst_name = tax_info.get("pst_name", "PST")
@@ -342,8 +357,8 @@ Thank you,
 </body>
 </html>"""
 
+
 def send_email(subject: str, body: str, to_email: str):
-    """Email via SMTP with optional CC from secrets; supports comma/semicolon lists."""
     try:
         frm = safe_get_secret("SENDER_FROM_EMAIL", required=True)
         smtp_server = safe_get_secret("SMTP_SERVER", required=True)
@@ -351,7 +366,7 @@ def send_email(subject: str, body: str, to_email: str):
         smtp_user = safe_get_secret("EMAIL_USER", required=True)
         smtp_pass = safe_get_secret("EMAIL_PASSWORD", required=True)
         cc_list = parse_email_list(st.secrets.get("QUOTE_TRACKING_CC_EMAIL"))
-        to_list = parse_email_list(to_email) or [to_email]  # allow single address fallback
+        to_list = parse_email_list(to_email) or [to_email]
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
@@ -371,7 +386,7 @@ def send_email(subject: str, body: str, to_email: str):
     except Exception as e:
         st.error(f"Email failed: {e}")
 
-# --- UI ------------------------------------------------------------------------
+# --- MAIN APP UI ---------------------------------------------------------------
 
 st.title("CounterPro")
 
@@ -431,73 +446,54 @@ if allowed_sources:
 else:
     st.warning(f"No material-source mapping for branch '{selected_branch}'. Showing all inventory.")
 
-# 4) Thickness selector
-th_list = sorted(df_inv["Thickness"].dropna().unique())
-default_th_idx = th_list.index("3cm") if "3cm" in th_list else 0
-selected_thickness = st.selectbox("Select Thickness", th_list, index=default_th_idx)
-df_inv = df_inv[df_inv["Thickness"] == selected_thickness]
+# 4) Thickness selector — default to 3 cm (normalized to '3cm')
+th_values = sorted(df_inv["Thickness_norm"].dropna().unique())
+default_th_idx = th_values.index("3cm") if "3cm" in th_values else 0
+selected_thickness_norm = st.selectbox(
+    "Select Thickness",
+    th_values,
+    index=default_th_idx,
+    format_func=lambda t: "3 cm" if t == "3cm" else t,
+)
+
+df_inv = df_inv[df_inv["Thickness_norm"] == selected_thickness_norm]
+selected_thickness_label = "3 cm" if selected_thickness_norm == "3cm" else selected_thickness_norm
 
 # 5) Square footage input
-MINIMUM_SQ_FT = DEFAULTS["MINIMUM_SQ_FT"]
 sq_ft_input = st.number_input("Enter Square Footage Needed", min_value=1, value=40, step=1)
 sq_ft_used = max(sq_ft_input, MINIMUM_SQ_FT)
 if sq_ft_input < MINIMUM_SQ_FT:
     st.caption(f"Minimum charge applies: using {MINIMUM_SQ_FT} sq.ft for pricing.")
 
-# 6) Advanced tuning (optional, non-destructive)
-with st.expander("Advanced: constants & tax overrides (optional)"):
-    MARKUP_FACTOR = st.number_input("Markup factor", value=DEFAULTS["MARKUP_FACTOR"], step=0.01)
-    INSTALL_COST_PER_SQFT = st.number_input("Install cost per sq ft", value=DEFAULTS["INSTALL_COST_PER_SQFT"], step=0.50)
-    FABRICATION_COST_PER_SQFT = st.number_input("Fabrication cost per sq ft", value=DEFAULTS["FABRICATION_COST_PER_SQFT"], step=0.50)
-    WASTE_FACTOR = st.number_input("Waste factor (e.g., 1.05 = +5%)", value=DEFAULTS["WASTE_FACTOR"], step=0.01, format="%.2f")
-    IB_MATERIAL_MARKUP = st.number_input("IB material markup", value=DEFAULTS["IB_MATERIAL_MARKUP"], step=0.01)
-
-    rounding_mode = st.selectbox("Customer-friendly rounding", ["None", "Nearest $1", "Nearest $5", "Nearest $10"], index=2)
-
-    override_taxes = st.checkbox("Override branch tax rates for this quote?", value=False)
-    if override_taxes:
-        og = BRANCH_TAX_RATES.get(selected_branch, BRANCH_TAX_RATES["default"])
-        gst_override = st.number_input("GST rate (e.g., 0.05)", value=float(og["gst"]), step=0.01, format="%.2f")
-        pst_override = st.number_input("PST/RST rate (e.g., 0.06)", value=float(og["pst"]), step=0.01, format="%.2f")
-        pst_name_override = st.text_input("PST/RST label", value=og["pst_name"])
-        tax_rates = {"gst": gst_override, "pst": pst_override, "pst_name": pst_name_override}
-    else:
-        tax_rates = BRANCH_TAX_RATES.get(selected_branch, BRANCH_TAX_RATES["default"])
-
-params = {
-    "MARKUP_FACTOR": MARKUP_FACTOR,
-    "INSTALL_COST_PER_SQFT": float(INSTALL_COST_PER_SQFT),
-    "FABRICATION_COST_PER_SQFT": float(FABRICATION_COST_PER_SQFT),
-    "WASTE_FACTOR": float(WASTE_FACTOR),
-    "IB_MATERIAL_MARKUP": float(IB_MATERIAL_MARKUP),
-}
-
-# 7) Aggregate & ensure material sufficiency with waste buffer
-required = sq_ft_used * params["WASTE_FACTOR"]
+# 6) Aggregate & ensure material sufficiency with waste buffer
+required = sq_ft_used * WASTE_FACTOR
 df_agg = (
-    df_inv.groupby(["Full Name", "Location"])
+    df_inv.groupby(["Full Name", "Location"])  # group within location to respect transfers
     .agg(
         available_sq_ft=("Available Sq Ft", "sum"),
         unit_cost=("unit_cost", "mean"),
         slab_count=("Serial Number", "nunique"),
-        serial_numbers=("Serial Number", lambda x: ", ".join(sorted(x.astype(str).unique())))
+        serial_numbers=("Serial Number", lambda x: ", ".join(sorted(x.astype(str).unique()))),
     )
     .reset_index()
 )
+
 df_agg = df_agg[df_agg["available_sq_ft"] >= required]
 
-# Price each option
 if df_agg.empty:
-    st.error(f"❌ No slabs have enough material (including {int((params['WASTE_FACTOR'] - 1) * 100)}% buffer).")
+    st.error(f"❌ No slabs have enough material (including {int((WASTE_FACTOR - 1) * 100)}% buffer).")
     st.stop()
 
+# Price each option
+
 df_agg["price"] = df_agg.apply(
-    lambda r: calculate_cost(r, sq_ft_used, params)["total_customer_facing_base_cost"],
-    axis=1
+    lambda r: calculate_cost(r, sq_ft_used)["total_customer_facing_base_cost"],
+    axis=1,
 )
+
 df_agg = df_agg.sort_values("price", ascending=True, ignore_index=True)
 
-# 8) Defensive budget slider
+# 7) Defensive budget slider
 mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
 if mi == ma:
     st.caption(f"All qualifying options are ~{money(mi)}. Budget slider skipped.")
@@ -510,20 +506,31 @@ else:
         st.error("❌ No materials fall within that budget.")
         st.stop()
 
-# 9) Choose a material (shows final $/sq ft)
+# 8) Choose a material (shows final $/sq ft)
 records = df_agg.to_dict("records")
 selected = st.selectbox(
     "Choose a material",
     records,
     format_func=lambda r: (
         f"{r['Full Name']} – "
-        f"{money(calculate_cost(r, sq_ft_used, params)['total_customer_facing_base_cost'] / sq_ft_used)}/sq ft"
-    )
+        f"{money(calculate_cost(r, sq_ft_used)['total_customer_facing_base_cost'] / sq_ft_used)}/sq ft"
+    ),
 )
 
-# 10) Detail + quote
+# 9) Detail + quote
 if selected:
-    costs = calculate_cost(selected, sq_ft_used, params)
+    costs = calculate_cost(selected, sq_ft_used)
+
+    # IB transparency readout
+    ib_base = costs.get("ib_base_cost_per_sq", 0.0)
+    ib_rate = costs.get("ib_per_sq", 0.0)
+    ib_margin_pct = costs.get("ib_margin_pct", 0.0)
+    ib_method = costs.get("ib_method", "")
+    method_label = "18% floor applied" if ib_method == "margin_floor" else "standard IB markup"
+    st.caption(
+        f"**IB check** — Base cost (slab+fab): {money(ib_base)}/sq ft → IB rate: {money(ib_rate)}/sq ft → "
+        f"Margin: {ib_margin_pct*100:.1f}% ({method_label})."
+    )
 
     st.markdown(f"**Material:** {selected['Full Name']}")
     st.markdown(f"**Source Location:** {selected['Location']}")
@@ -535,23 +542,31 @@ if selected:
     job_name = st.text_input("Job Name (optional)")
     additional_costs = st.number_input(
         "Additional Costs – sinks, tile, plumbing",
-        value=0.0, min_value=0.0, step=10.0, format="%.2f"
+        value=0.0, min_value=0.0, step=10.0, format="%.2f",
     )
 
     subtotal = costs["total_customer_facing_base_cost"] + additional_costs
+    tax_rates = BRANCH_TAX_RATES.get(selected_branch, BRANCH_TAX_RATES["default"]) 
     tax_info = compute_taxes(subtotal, tax_rates)
-    final_total = round_total(tax_info["final_total"], rounding_mode)
+    final_total = tax_info["final_total"]
 
     st.markdown(f"**Subtotal:** <span style='color:green'>{money(subtotal)}</span>", unsafe_allow_html=True)
-    st.markdown(f"**GST ({tax_info['gst_rate']*100:.0f}%):** <span style='color:green'>{money(tax_info['gst_amount'])}</span>", unsafe_allow_html=True)
+    st.markdown(
+        f"**GST ({tax_info['gst_rate']*100:.0f}%):** <span style='color:green'>{money(tax_info['gst_amount'])}</span>",
+        unsafe_allow_html=True,
+    )
     if tax_info["pst_amount"] > 0:
-        st.markdown(f"**{tax_info['pst_name']} ({tax_info['pst_rate']*100:.0f}%):** <span style='color:green'>{money(tax_info['pst_amount'])}</span>", unsafe_allow_html=True)
+        st.markdown(
+            f"**{tax_info['pst_name']} ({tax_info['pst_rate']*100:.0f}%):** "
+            f"<span style='color:green'>{money(tax_info['pst_amount'])}</span>",
+            unsafe_allow_html=True,
+        )
     st.markdown(f"### <span style='color:green'>Final Total: {money(final_total)}</span>", unsafe_allow_html=True)
 
     if selected["slab_count"] > 1:
         st.info("Note: This selection uses multiple slabs; color/pattern may vary slightly.")
 
-    # Compose HTML now (used by both download + email)
+    # Compose HTML for download/email
     body_html = compose_breakdown_email_body(
         job_name=job_name,
         selected_branch=selected_branch,
@@ -559,7 +574,7 @@ if selected:
         rec=selected,
         costs=costs,
         fab_plant=get_fab_plant(selected_branch),
-        selected_thickness=selected_thickness,
+        selected_thickness=selected_thickness_label,
         sq_ft_used=sq_ft_used,
         additional_costs=additional_costs,
         subtotal=subtotal,
@@ -573,7 +588,7 @@ if selected:
         final_total=final_total,
     )
 
-    # Download quote as HTML (new, non-destructive)
+    # Download quote as HTML
     st.download_button(
         label="⬇️ Download Quote (HTML)",
         data=body_html,
@@ -582,13 +597,10 @@ if selected:
         use_container_width=True,
     )
 
-    # Email form (prevents accidental double-sends)
+    # Email to selected salesperson ONLY (no override field)
     if selected_email:
-        with st.form("email_quote_form", clear_on_submit=False):
-            to_override = st.text_input("Send to", value=selected_email, help="Comma or semicolon separated emails OK.")
-            submitted = st.form_submit_button("📧 Email Quote", use_container_width=True)
-            if submitted:
-                subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"
-                send_email(subject, body_html, to_override)
+        if st.button("📧 Email Quote", use_container_width=True):
+            subject = f"CounterPro Quote – {job_name or 'Unnamed Job'}"
+            send_email(subject, body_html, selected_email)
     else:
         st.warning("No salesperson email found for the selected branch.")

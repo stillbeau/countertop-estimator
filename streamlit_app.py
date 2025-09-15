@@ -210,6 +210,23 @@ def calculate_cost(rec: dict, sq: float) -> dict:
 
 
 def compute_taxes(subtotal: float, tax_rates: dict) -> dict:
+    gst_rate = float(tax_rates.get("gst", 0.05))
+    pst_rate = float(tax_rates.get("pst", 0.00))
+    pst_name = tax_rates.get("pst_name", "PST")
+
+    gst_amt = Decimal(str(subtotal * gst_rate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    pst_amt = Decimal(str(subtotal * pst_rate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    final   = Decimal(str(subtotal)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) + gst_amt + pst_amt
+
+    return {
+        "gst_rate": gst_rate,
+        "pst_rate": pst_rate,
+        "pst_name": pst_name,
+        "gst_amount": float(gst_amt),
+        "pst_amount": float(pst_amt),
+        "final_total": float(final),
+    }
+
 
 def compute_taxes(subtotal: float, tax_rates: dict) -> dict:
     gst_rate = float(tax_rates.get("gst", 0.05))

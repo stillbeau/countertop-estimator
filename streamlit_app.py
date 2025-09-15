@@ -29,9 +29,9 @@ st.markdown(
 
   /* Header (solid, no blur) */
   .app-header{ position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--border); padding: 16px 12px; margin: 0 -1rem 16px -1rem; }
-  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand{ display:flex; align-items:center; gap:10px; color: var(--text); }
   .brand svg{ width:28px; height:28px; border-radius:8px; }
-  .brand-title{ font-weight: 700; font-size: 18px; letter-spacing: -.01em; }
+  .brand-title{ color: var(--text); font-weight: 700; font-size: 18px; letter-spacing: -.01em; line-height: 1.2; }
   .tagline{ color: var(--muted); font-size: 12px; margin-left: 38px; margin-top: 2px; }
 
   /* Section cue */

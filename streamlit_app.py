@@ -10,21 +10,75 @@ from email.mime.multipart import MIMEMultipart
 from urllib.parse import quote
 
 # --- Page config & CSS ---
-st.set_page_config(page_title="CounterPro", layout="centered")
+st.set_page_config(page_title="CounterPro", page_icon="🧱", layout="centered")
 st.markdown(
     """
     <style>
-    /* Smaller font for selectboxes/labels */
-    div[data-baseweb="select"] { font-size: 0.8rem; }
-    .stLabel, label { font-size: 0.8rem; }
-    /* Slightly larger headings */
-    h1 { font-size: 2rem; }
-    h2 { font-size: 1.5rem; }
-    pre, code { white-space: pre-wrap !important; }
-    </style>
+  :root{
+    --bg-start:#f7f8fa; /* soft neutral */
+    --bg-end:#eef1f6;
+    --card:#ffffff;
+    --text:#0b0c0f;
+    --muted:#6b7280;
+    --accent:#0A84FF; /* Apple blue */
+    --accent-2:#5E5CE6; /* blue→purple */
+    --radius:16px;
+  }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); }
+  .stApp { background: linear-gradient(160deg, var(--bg-start), var(--bg-end)); }
+  .block-container{ padding-top: 0 !important; max-width: 960px; }
+
+  /* Header */
+  .app-header{ position: sticky; top: 0; z-index: 5; background: rgba(255,255,255,0.6); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid rgba(0,0,0,0.06); padding: 18px 16px; margin: 0 -1rem 18px -1rem; }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand svg{ width:34px; height:34px; border-radius:12px; box-shadow: 0 6px 18px rgba(10,132,255,0.25); }
+  .brand-title{ font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
+  .tagline{ color: var(--muted); font-size: 12px; margin-left: 46px; margin-top: 2px; }
+
+  /* Cards */
+  .section-title{ font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 20px 0 8px; }
+  .card{ background: var(--card); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(16,24,40,.06); padding: 16px; border: 1px solid rgba(0,0,0,.04); }
+
+  /* Buttons */
+  .stButton>button, .stDownloadButton>button{ background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: none; border-radius: 12px; padding: 10px 14px; font-weight: 600; box-shadow: 0 8px 20px rgba(10,132,255,.25); transition: transform .08s ease, filter .2s ease; }
+  .stButton>button:hover, .stDownloadButton>button:hover{ filter: brightness(1.05); }
+  .stButton>button:active, .stDownloadButton>button:active{ transform: translateY(1px); }
+
+  /* Inputs */
+  .stSelectbox, .stNumberInput, .stTextInput { border-radius: var(--radius); }
+  label, .stLabel { font-size: .9rem; color: #111827; }
+
+  /* Sliders & checkboxes */
+  input[type="range"], input[type="checkbox"], input[type="radio"]{ accent-color: var(--accent); }
+
+  /* Headings */
+  h1 { font-size: 28px; margin: 0; }
+  h2 { font-size: 18px; }
+</style>
     """,
     unsafe_allow_html=True,
 )
+
+# --- Logo (inline SVG) ---
+
+def logo_svg() -> str:
+    return """
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" role="img">
+      <defs>
+        <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0A84FF"/>
+          <stop offset="100%" stop-color="#5E5CE6"/>
+        </linearGradient>
+      </defs>
+      <rect x="6" y="6" width="52" height="52" rx="14" fill="url(#g1)"/>
+      <!-- countertop silhouette -->
+      <rect x="14" y="22" width="36" height="20" rx="6" fill="#ffffff"/>
+      <!-- sink cutout -->
+      <circle cx="40" cy="32" r="5.5" fill="#e6e8ef"/>
+      <!-- faucet notch hint -->
+      <rect x="37.5" y="25.5" width="5" height="2.6" rx="1.3" fill="#e6e8ef"/>
+    </svg>
+    """
 
 # --- Constants ---
 MINIMUM_SQ_FT = 35
@@ -405,7 +459,16 @@ def send_email(subject: str, body: str, to_email: str):
 
 # --- MAIN APP UI ---------------------------------------------------------------
 
-st.title("CounterPro")
+header_html = f"""
+<div class='app-header'>
+  <div class='brand'>{logo_svg()}<span class='brand-title'>CounterPro</span></div>
+  <div class='tagline'>Fast, polished countertop quotes</div>
+</div>
+"""
+st.markdown(header_html, unsafe_allow_html=True)
+
+st.markdown("<div class='section-title'>Branch & Salesperson</div>", unsafe_allow_html=True)
+
 
 # 1) Branch & Salesperson
 df_sp = load_salespeople_sheet(SALESPEOPLE_TAB)
@@ -537,17 +600,6 @@ selected = st.selectbox(
 # 9) Detail + quote
 if selected:
     costs = calculate_cost(selected, sq_ft_used)
-
-    # IB transparency readout
-    ib_base = costs.get("ib_base_cost_per_sq", 0.0)
-    ib_rate = costs.get("ib_per_sq", 0.0)
-    ib_margin_pct = costs.get("ib_margin_pct", 0.0)
-    ib_method = costs.get("ib_method", "")
-    method_label = "18% floor applied" if ib_method == "margin_floor" else "standard IB markup"
-    st.caption(
-        f"**IB check** — Base cost (slab+fab): {money(ib_base)}/sq ft → IB rate: {money(ib_rate)}/sq ft → "
-        f"Margin: {ib_margin_pct*100:.1f}% ({method_label})."
-    )
 
     st.markdown(f"**Material:** {selected['Full Name']}")
     st.markdown(f"**Source Location:** {selected['Location']}")

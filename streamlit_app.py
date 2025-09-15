@@ -15,45 +15,40 @@ st.markdown(
     """
     <style>
   :root{
-    --bg-start:#f7f8fa; /* soft neutral */
-    --bg-end:#eef1f6;
-    --card:#ffffff;
-    --text:#0b0c0f;
-    --muted:#6b7280;
+    --bg:#FAFAFB; /* light canvas */
+    --panel:#FFFFFF; /* cards/header */
+    --text:#0B0C0F; /* near-black */
+    --muted:#3C3C43; /* iOS secondary label */
     --accent:#0A84FF; /* Apple blue */
-    --accent-2:#5E5CE6; /* blue→purple */
-    --radius:16px;
+    --border:#E5E7EB;
+    --radius:12px;
   }
-  html, body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); }
-  .stApp { background: linear-gradient(160deg, var(--bg-start), var(--bg-end)); }
-  .block-container{ padding-top: 0 !important; max-width: 960px; }
+  html, body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); font-size: 16px; }
+  .stApp { background: var(--bg); }
+  .block-container{ padding-top: 0 !important; max-width: 920px; }
 
-  /* Header */
-  .app-header{ position: sticky; top: 0; z-index: 5; background: rgba(255,255,255,0.6); backdrop-filter: saturate(180%) blur(16px); -webkit-backdrop-filter: saturate(180%) blur(16px); border-bottom: 1px solid rgba(0,0,0,0.06); padding: 18px 16px; margin: 0 -1rem 18px -1rem; }
-  .brand{ display:flex; align-items:center; gap:12px; }
-  .brand svg{ width:34px; height:34px; border-radius:12px; box-shadow: 0 6px 18px rgba(10,132,255,0.25); }
-  .brand-title{ font-weight: 700; font-size: 20px; letter-spacing: -.01em; }
-  .tagline{ color: var(--muted); font-size: 12px; margin-left: 46px; margin-top: 2px; }
+  /* Header (solid, no blur) */
+  .app-header{ position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--border); padding: 16px 12px; margin: 0 -1rem 16px -1rem; }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand svg{ width:28px; height:28px; border-radius:8px; }
+  .brand-title{ font-weight: 700; font-size: 18px; letter-spacing: -.01em; }
+  .tagline{ color: var(--muted); font-size: 12px; margin-left: 38px; margin-top: 2px; }
 
-  /* Cards */
-  .section-title{ font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 20px 0 8px; }
-  .card{ background: var(--card); border-radius: var(--radius); box-shadow: 0 8px 28px rgba(16,24,40,.06); padding: 16px; border: 1px solid rgba(0,0,0,.04); }
+  /* Section cue */
+  .section-title{ font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 6px; }
 
-  /* Buttons */
-  .stButton>button, .stDownloadButton>button{ background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; border: none; border-radius: 12px; padding: 10px 14px; font-weight: 600; box-shadow: 0 8px 20px rgba(10,132,255,.25); transition: transform .08s ease, filter .2s ease; }
+  /* Buttons: solid, high contrast */
+  .stButton>button, .stDownloadButton>button{ background: var(--accent); color: #fff; border: 1px solid var(--accent); border-radius: 10px; padding: 10px 14px; font-weight: 600; box-shadow: 0 1px 0 rgba(0,0,0,.04); transition: transform .08s ease, filter .2s ease; }
   .stButton>button:hover, .stDownloadButton>button:hover{ filter: brightness(1.05); }
   .stButton>button:active, .stDownloadButton>button:active{ transform: translateY(1px); }
 
-  /* Inputs */
-  .stSelectbox, .stNumberInput, .stTextInput { border-radius: var(--radius); }
-  label, .stLabel { font-size: .9rem; color: #111827; }
-
-  /* Sliders & checkboxes */
-  input[type="range"], input[type="checkbox"], input[type="radio"]{ accent-color: var(--accent); }
+  /* Inputs & labels */
+  label, .stLabel { font-size: 0.95rem; color: #111827; }
+  .stSelectbox div[role="combobox"], .stNumberInput input, .stTextInput input { font-size: 0.95rem; }
 
   /* Headings */
-  h1 { font-size: 28px; margin: 0; }
-  h2 { font-size: 18px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 16px 0 6px; }
 </style>
     """,
     unsafe_allow_html=True,

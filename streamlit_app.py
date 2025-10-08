@@ -1,3 +1,4 @@
+import math
 import streamlit as st
 import pandas as pd
 import gspread
@@ -221,13 +222,23 @@ def normalize_inventory_df(df: pd.DataFrame) -> pd.DataFrame:
 def calculate_cost(rec: dict, sq: float) -> dict:
     uc = float(rec.get("unit_cost", 0) or 0)
 
-    # Slab sizing — ensure we always cover the full slab cost, even if the job
-    # only uses part of it.
-    slab_sq_ft = float(rec.get("available_sq_ft", 0) or 0)
-    if slab_sq_ft <= 0:
-        slab_sq_ft = sq
+    # Determine how many full slabs are required to satisfy the job (with waste)
+    # rather than charging for every square foot currently in stock.
+    available_sq_ft = float(rec.get("available_sq_ft", 0) or 0)
+    slab_count = int(rec.get("slab_count", 0) or 0)
+    required_sq_ft = sq * WASTE_FACTOR
+
+    avg_slab_sq_ft = 0.0
+    if slab_count > 0 and available_sq_ft > 0:
+        avg_slab_sq_ft = available_sq_ft / slab_count
+
+    if avg_slab_sq_ft > 0:
+        slabs_needed = max(1, math.ceil(required_sq_ft / avg_slab_sq_ft))
+        if slab_count:
+            slabs_needed = min(slabs_needed, slab_count)
+        slab_sq_ft = slabs_needed * avg_slab_sq_ft
     else:
-        slab_sq_ft = max(slab_sq_ft, sq)
+        slab_sq_ft = max(required_sq_ft, sq, available_sq_ft)
 
     material_cost_used = uc * sq
     total_slab_cost = uc * slab_sq_ft

@@ -221,29 +221,52 @@ def normalize_inventory_df(df: pd.DataFrame) -> pd.DataFrame:
 def calculate_cost(rec: dict, sq: float) -> dict:
     uc = float(rec.get("unit_cost", 0) or 0)
 
-    # Customer-facing build (material markup on unit cost, then add fab + install)
-    mat_component = uc * MARKUP_FACTOR * sq
+    # Slab sizing — ensure we always cover the full slab cost, even if the job
+    # only uses part of it.
+    slab_sq_ft = float(rec.get("available_sq_ft", 0) or 0)
+    if slab_sq_ft <= 0:
+        slab_sq_ft = sq
+    else:
+        slab_sq_ft = max(slab_sq_ft, sq)
+
+    material_cost_used = uc * sq
+    total_slab_cost = uc * slab_sq_ft
+    unused_material_cost = max(total_slab_cost - material_cost_used, 0.0)
+
+    # Customer-facing build: charge the full slab cost, but only mark up the
+    # portion of material used on the job.
+    material_markup = material_cost_used * max(MARKUP_FACTOR - 1.0, 0.0)
+    mat_component = total_slab_cost + material_markup
     fab_component = FABRICATION_COST_PER_SQFT * sq
     ins_component = INSTALL_COST_PER_SQFT * sq
 
-    # IB pricing — ensure at least 18% margin on (slab + fabrication rate)
-    base_cost_for_ib_per_sq = uc + FABRICATION_COST_PER_SQFT
-    ib_candidate_margin_per_sq = base_cost_for_ib_per_sq / (1.0 - IB_MIN_MARGIN)
-    ib_candidate_markup_per_sq = (uc * IB_MATERIAL_MARKUP) + FABRICATION_COST_PER_SQFT
-
-    if ib_candidate_margin_per_sq >= ib_candidate_markup_per_sq:
-        ib_per_sq = ib_candidate_margin_per_sq
-        ib_method = "margin_floor"  # 18% floor applied
+    # IB pricing — ensure at least 18% margin on the full slab + fabrication cost.
+    base_cost_for_ib_total = total_slab_cost + fab_component
+    if base_cost_for_ib_total > 0:
+        ib_candidate_margin_total = base_cost_for_ib_total / (1.0 - IB_MIN_MARGIN)
     else:
-        ib_per_sq = ib_candidate_markup_per_sq
-        ib_method = "markup_chain"   # legacy markup method
+        ib_candidate_margin_total = 0.0
 
-    ib_total = ib_per_sq * sq
+    ib_candidate_markup_total = (
+        (material_cost_used * IB_MATERIAL_MARKUP)
+        + unused_material_cost
+        + fab_component
+    )
+
+    if ib_candidate_margin_total >= ib_candidate_markup_total:
+        ib_total = ib_candidate_margin_total
+        ib_method = "margin_floor"  # 18% floor applied on full cost
+    else:
+        ib_total = ib_candidate_markup_total
+        ib_method = "markup_chain"   # legacy markup method with unused cost pass-through
 
     # Margin % is (price - cost) / price
     ib_margin_pct = 0.0
-    if ib_per_sq > 0:
-        ib_margin_pct = 1.0 - (base_cost_for_ib_per_sq / ib_per_sq)
+    if ib_total > 0:
+        ib_margin_pct = 1.0 - (base_cost_for_ib_total / ib_total)
+
+    ib_per_sq = ib_total / sq if sq else 0.0
+    ib_base_cost_per_sq = base_cost_for_ib_total / sq if sq else 0.0
 
     return {
         "base_material_and_fab_component": mat_component + fab_component,
@@ -252,7 +275,7 @@ def calculate_cost(rec: dict, sq: float) -> dict:
         "total_customer_facing_base_cost": mat_component + fab_component + ins_component,
         # Extras for UI transparency
         "ib_per_sq": ib_per_sq,
-        "ib_base_cost_per_sq": base_cost_for_ib_per_sq,
+        "ib_base_cost_per_sq": ib_base_cost_per_sq,
         "ib_margin_pct": ib_margin_pct,
         "ib_method": ib_method,
     }

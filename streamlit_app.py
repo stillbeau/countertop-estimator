@@ -2,6 +2,8 @@ import math
 import streamlit as st
 import pandas as pd
 import gspread
+from gspread import Client
+from gspread.exceptions import WorksheetNotFound
 import json
 import smtplib
 import pytz
@@ -142,16 +144,45 @@ def get_fab_plant(branch: str) -> str:
 
 # --- Data loading & normalization ---------------------------------------------
 
+def _open_salespeople_worksheet(gc: Client, tab_name: str):
+    """Return a worksheet matching ``tab_name`` (case/space insensitive)."""
+
+    def _normalize(name: str) -> str:
+        return " ".join(name.strip().split()).lower()
+
+    sh = gc.open_by_key(SPREADSHEET_ID)
+
+    try:
+        return sh.worksheet(tab_name)
+    except WorksheetNotFound:
+        normalized_target = _normalize(tab_name)
+        for ws in sh.worksheets():
+            if _normalize(ws.title) == normalized_target:
+                return ws
+        raise
+
+
 @st.cache_data(show_spinner=False)
 def load_salespeople_sheet(tab_name: str) -> pd.DataFrame:
     try:
         raw = st.secrets["gcp_service_account"]
         creds = json.loads(raw) if isinstance(raw, str) else raw
         gc = gspread.service_account_from_dict(creds)
-        ws = gc.open_by_key(SPREADSHEET_ID).worksheet(tab_name)
+        ws = _open_salespeople_worksheet(gc, tab_name)
         df = pd.DataFrame(ws.get_all_records())
         df.columns = df.columns.str.strip()
         return df
+    except WorksheetNotFound:
+        try:
+            sh = gc.open_by_key(SPREADSHEET_ID)
+            available = ", ".join(ws.title for ws in sh.worksheets())
+        except Exception:
+            available = "unavailable"
+        st.error(
+            "❌ Could not find the Google Sheet tab "
+            f"'{tab_name}'. Available tabs: {available}"
+        )
+        return pd.DataFrame()
     except Exception as e:
         st.error(f"❌ Could not load Google Sheet tab '{tab_name}': {e}")
         return pd.DataFrame()
@@ -600,8 +631,6 @@ df_agg["price"] = df_agg.apply(
     axis=1,
 )
 
-df_agg = df_agg.sort_values("price", ascending=True, ignore_index=True)
-
 # 7) Defensive budget slider
 mi, ma = int(df_agg["price"].min()), int(df_agg["price"].max())
 if mi == ma:
@@ -614,6 +643,12 @@ else:
     if df_agg.empty:
         st.error("❌ No materials fall within that budget.")
         st.stop()
+
+df_agg = df_agg.sort_values(
+    "Full Name",
+    key=lambda s: s.str.casefold() if s.dtype == object else s,
+    ignore_index=True,
+)
 
 # 8) Choose a material (shows final $/sq ft)
 records = df_agg.to_dict("records")
